@@ -1,0 +1,6 @@
+{
+  "name": "EXAMORA – AI Examination Teacher Platform",
+  "description": "An intelligent digital examination system and AI examination teacher for individual students with document extraction, timed exams, rubric evaluation, and performance analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

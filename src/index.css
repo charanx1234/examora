@@ -1,0 +1,45 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-serif: 'Fraunces', Georgia, serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  /* Remap blue-tinted slate variables in Dark Mode to true matte neutral Carbon/Zinc so dark mode looks like a real engineering/academic product rather than an AI template */
+  .dark {
+    --color-slate-950: #09090b;
+    --color-slate-900: #121215;
+    --color-slate-800: #1e1e23;
+    --color-slate-700: #2e2e36;
+    --color-slate-600: #52525b;
+    --color-slate-500: #71717a;
+    --color-slate-400: #a1a1aa;
+    --color-slate-300: #d4d4d8;
+    --color-slate-200: #e4e4e7;
+    --color-slate-100: #f4f4f5;
+    --color-slate-50: #fafafa;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, .font-display {
+    font-family: var(--font-sans);
+    letter-spacing: -0.025em;
+  }
+
+  .font-editorial {
+    font-family: var(--font-serif);
+  }
+
+  .font-mono, .tabular-nums {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
