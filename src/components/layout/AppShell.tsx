@@ -16,6 +16,7 @@ import {
 import { AppView } from '../../types/examora.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { Button } from '../ui/Button.tsx';
+import avatarScholarImg from '../../assets/images/avatar_student_scholar_1794064387086.jpg';
 
 interface AppShellProps {
   currentView: AppView;
@@ -119,7 +120,7 @@ export function AppShell({ currentView, onNavigate, children }: AppShellProps) {
 
             <div className="flex items-center gap-3">
               <img
-                src={profile?.avatarUrl || '/src/assets/images/avatar_student_scholar_1794064387086.jpg'}
+                src={profile?.avatarUrl || avatarScholarImg}
                 alt={profile?.fullName || 'Scholar'}
                 referrerPolicy="no-referrer"
                 className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"

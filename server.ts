@@ -35,7 +35,7 @@ dotenv.config();
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
   app.disable('x-powered-by');
   app.use(securityHeadersMiddleware);
 
@@ -624,6 +624,11 @@ async function startServer() {
     });
   });
 
+  // Healthcheck route for cloud load balancers (Voroa, Cloud Run, Render, Railway)
+  app.get('/api/health', (_req, res) => {
+    res.json({ status: 'ok', service: 'examora', timestamp: new Date().toISOString() });
+  });
+
   // Vite middleware for development or static serving in production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -634,13 +639,13 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*all', (_req, res) => {
+    app.use((_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`EXAMORA server running on http://localhost:${PORT}`);
+    console.log(`EXAMORA server running on http://0.0.0.0:${PORT}`);
   });
 }
 

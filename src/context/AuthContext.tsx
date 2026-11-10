@@ -8,6 +8,7 @@ import {
 } from 'firebase/auth';
 import { auth, googleAuthProvider } from '../lib/firebase.ts';
 import { StudentProfile } from '../types/examora.ts';
+import avatarScholarImg from '../assets/images/avatar_student_scholar_1794064387086.jpg';
 
 interface AuthContextValue {
   firebaseUser: User | null;
@@ -77,9 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
         body: JSON.stringify({
           fullName: fallbackInfo.fullName,
-          avatarUrl:
-            fallbackInfo.avatarUrl ||
-            '/src/assets/images/avatar_student_scholar_1794064387086.jpg',
+          avatarUrl: fallbackInfo.avatarUrl || avatarScholarImg,
           consentGiven: fallbackInfo.consentGiven ?? true,
           consentTextVersion: 'DPDP-2023-v1.0',
           consentText: DEFAULT_CONSENT_TEXT,
@@ -100,9 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       uid: fallbackInfo.uid,
       email: fallbackInfo.email,
       fullName: fallbackInfo.fullName,
-      avatarUrl:
-        fallbackInfo.avatarUrl ||
-        '/src/assets/images/avatar_student_scholar_1794064387086.jpg',
+      avatarUrl: fallbackInfo.avatarUrl || avatarScholarImg,
       academicLevel: 'University / Undergraduate',
       targetGoal: 'Honors Mastery',
       preferredDifficulty: 'Medium',
@@ -184,13 +181,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (
         code === 'auth/popup-closed-by-user' ||
         code === 'auth/cancelled-popup-request' ||
-        code === 'auth/popup-blocked'
+        code === 'auth/popup-blocked' ||
+        code === 'auth/unauthorized-domain' ||
+        code === 'auth/operation-not-supported-in-this-environment'
       ) {
         await signInWithCredentials('claire.vance@oxford-scholar.edu', 'Claire Vance', consentGiven);
         return;
       }
       setAuthError(
-        'Google popup could not complete in this preview frame. Please use the Sign Up / Login form below.'
+        'Google popup could not complete on this domain. Please use the Sign Up / Login form below or add this domain to Firebase Authorized Domains.'
       );
     }
   };

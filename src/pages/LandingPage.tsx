@@ -11,6 +11,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { Button } from '../components/ui/Button.tsx';
+import heroStudyDeskImg from '../assets/images/hero_examora_study_desk_1794064388130.jpg';
+import diagramCalculusImg from '../assets/images/diagram_calculus_evaluation_1794064388575.jpg';
+import avatarScholarImg from '../assets/images/avatar_student_scholar_1794064387086.jpg';
 
 interface LandingPageProps {
   onOpenPrivacyPolicy: () => void;
@@ -347,7 +350,7 @@ export function LandingPage({ onOpenPrivacyPolicy }: LandingPageProps) {
             <div className="lg:col-span-5 flex flex-col">
               <div className="relative flex-1 min-h-[380px] rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-900">
                 <img
-                  src="/src/assets/images/hero_examora_study_desk_1794064388130.jpg"
+                  src={heroStudyDeskImg}
                   alt="Minimalist scholar desk with mathematical derivations and performance analytics"
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover"
@@ -513,7 +516,7 @@ export function LandingPage({ onOpenPrivacyPolicy }: LandingPageProps) {
                 className="lg:col-span-5 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-900 flex flex-col justify-between"
               >
                 <img
-                  src="/src/assets/images/diagram_calculus_evaluation_1794064388575.jpg"
+                  src={diagramCalculusImg}
                   alt="Vector Calculus Grading Matrix and Integral Evaluation Rubric"
                   referrerPolicy="no-referrer"
                   className="w-full h-56 object-cover"
@@ -569,7 +572,7 @@ export function LandingPage({ onOpenPrivacyPolicy }: LandingPageProps) {
               <div className="flex items-center justify-between gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                 <div className="flex items-center gap-3">
                   <img
-                    src="/src/assets/images/avatar_student_scholar_1794064387086.jpg"
+                    src={avatarScholarImg}
                     alt="Claire Vance"
                     referrerPolicy="no-referrer"
                     className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700"
