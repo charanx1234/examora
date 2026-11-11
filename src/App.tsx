@@ -24,6 +24,7 @@ import {
   uploadAndAnalyzeDocument,
 } from './services/api.ts';
 import { LandingPage } from './pages/LandingPage.tsx';
+import { LoginPage } from './pages/LoginPage.tsx';
 import { AppShell } from './components/layout/AppShell.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
 import { DocumentsPage } from './pages/DocumentsPage.tsx';
@@ -32,11 +33,15 @@ import { ExamPlayerPage } from './pages/ExamPlayerPage.tsx';
 import { ExamResultPage } from './pages/ExamResultPage.tsx';
 import { AnalyticsPage } from './pages/AnalyticsPage.tsx';
 import { ExamArchivePage } from './pages/ExamArchivePage.tsx';
+import { PersonalProfilePage } from './pages/PersonalProfilePage.tsx';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage.tsx';
 import { SettingsPrivacyPage } from './pages/SettingsPrivacyPage.tsx';
 
 function ExamoraApplication() {
   const { profile, loading: authLoading, getValidIdToken } = useAuth();
+  const [unauthScreen, setUnauthScreen] = useState<'login' | 'landing'>(() =>
+    window.location.pathname === '/overview' ? 'landing' : 'login'
+  );
   const [currentView, setCurrentView] = useState<AppView>(() =>
     window.location.pathname === '/privacy-policy' ? 'privacy-policy' : 'dashboard'
   );
@@ -130,10 +135,29 @@ function ExamoraApplication() {
     );
   }
 
-  // Show Landing Page when not signed in
+  // Show Dedicated Login Page or Overview Landing Page when not signed in
   if (!profile) {
+    if (unauthScreen === 'landing') {
+      return (
+        <LandingPage
+          onOpenLogin={() => {
+            window.history.pushState({}, '', '/login');
+            setUnauthScreen('login');
+          }}
+          onOpenPrivacyPolicy={() => {
+            window.history.pushState({}, '', '/privacy-policy');
+            setCurrentView('privacy-policy');
+          }}
+        />
+      );
+    }
+
     return (
-      <LandingPage
+      <LoginPage
+        onBackToOverview={() => {
+          window.history.pushState({}, '', '/overview');
+          setUnauthScreen('landing');
+        }}
         onOpenPrivacyPolicy={() => {
           window.history.pushState({}, '', '/privacy-policy');
           setCurrentView('privacy-policy');
@@ -345,6 +369,10 @@ function ExamoraApplication() {
           onViewResult={handleViewResult}
           onTriggerAdaptiveExam={handleTriggerAdaptive}
         />
+      )}
+
+      {currentView === 'profile' && (
+        <PersonalProfilePage onNavigate={setCurrentView} />
       )}
 
       {currentView === 'settings' && (

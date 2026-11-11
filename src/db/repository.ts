@@ -28,6 +28,27 @@ const memoryStore = {
   consents: new Map<string, any>(),
 };
 
+function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derivedKey = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${derivedKey}`;
+}
+
+function verifyPassword(password: string, storedHash: string): boolean {
+  const [salt, keyHex] = storedHash.split(':');
+  if (!salt || !keyHex) return false;
+  const keyBuffer = Buffer.from(keyHex, 'hex');
+  const derivedBuffer = crypto.scryptSync(password, salt, 64);
+  if (keyBuffer.length !== derivedBuffer.length) return false;
+  return crypto.timingSafeEqual(keyBuffer, derivedBuffer);
+}
+
+function stripSensitiveUserFields(user: any) {
+  if (!user) return user;
+  const { passwordHash: _ph, ...safeUser } = user;
+  return safeUser;
+}
+
 export async function getOrCreateUser(uid: string, email: string, fullName?: string, avatarUrl?: string) {
   if (isDatabaseConfigured) {
     try {
@@ -50,7 +71,7 @@ export async function getOrCreateUser(uid: string, email: string, fullName?: str
         })
         .returning();
 
-      return result[0];
+      return stripSensitiveUserFields(result[0]);
     } catch (error) {
       console.warn('Database query failed in getOrCreateUser, falling back to memory store:', error);
     }
@@ -61,6 +82,7 @@ export async function getOrCreateUser(uid: string, email: string, fullName?: str
     id: existing?.id || crypto.randomUUID(),
     uid,
     email,
+    passwordHash: existing?.passwordHash || null,
     fullName: fullName || existing?.fullName || email.split('@')[0] || 'Scholar',
     avatarUrl: avatarUrl || existing?.avatarUrl || null,
     academicLevel: existing?.academicLevel || 'University / Undergraduate',
@@ -70,12 +92,194 @@ export async function getOrCreateUser(uid: string, email: string, fullName?: str
     updatedAt: new Date(),
   };
   memoryStore.users.set(uid, userObj);
-  return userObj;
+  return stripSensitiveUserFields(userObj);
+}
+
+export async function registerUserWithPassword(params: {
+  email: string;
+  password: string;
+  fullName: string;
+  avatarUrl?: string;
+}) {
+  const cleanEmail = params.email.trim().toLowerCase();
+  const uid = `scholar-${cleanEmail.replace(/[^a-z0-9]/g, '')}`;
+  const passwordHash = hashPassword(params.password);
+
+  if (isDatabaseConfigured) {
+    try {
+      const existingRows = await db.select().from(users).where(eq(users.uid, uid));
+      if (existingRows.length > 0 && existingRows[0].passwordHash) {
+        const err: any = new Error('An account with this email already exists. Please sign in with your password.');
+        err.code = 'EMAIL_EXISTS';
+        throw err;
+      }
+
+      const result = await db
+        .insert(users)
+        .values({
+          uid,
+          email: cleanEmail,
+          passwordHash,
+          fullName: params.fullName.trim() || cleanEmail.split('@')[0] || 'Scholar',
+          avatarUrl: params.avatarUrl || null,
+        })
+        .onConflictDoUpdate({
+          target: users.uid,
+          set: {
+            email: cleanEmail,
+            passwordHash,
+            fullName: params.fullName.trim() || cleanEmail.split('@')[0] || 'Scholar',
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+
+      return stripSensitiveUserFields(result[0]);
+    } catch (error: any) {
+      if (error?.code === 'EMAIL_EXISTS') throw error;
+      console.warn('Database query failed in registerUserWithPassword, falling back to memory store:', error);
+    }
+  }
+
+  const existing = memoryStore.users.get(uid);
+  if (existing && existing.passwordHash) {
+    const err: any = new Error('An account with this email already exists. Please sign in with your password.');
+    err.code = 'EMAIL_EXISTS';
+    throw err;
+  }
+
+  const userObj = {
+    id: existing?.id || crypto.randomUUID(),
+    uid,
+    email: cleanEmail,
+    passwordHash,
+    fullName: params.fullName.trim() || cleanEmail.split('@')[0] || 'Scholar',
+    avatarUrl: params.avatarUrl || null,
+    academicLevel: 'University / Undergraduate',
+    targetGoal: 'Honors Mastery',
+    preferredDifficulty: 'Medium',
+    createdAt: existing?.createdAt || new Date(),
+    updatedAt: new Date(),
+  };
+  memoryStore.users.set(uid, userObj);
+  return stripSensitiveUserFields(userObj);
+}
+
+export async function authenticateUserWithPassword(email: string, password: string) {
+  const cleanEmail = email.trim().toLowerCase();
+  const uid = `scholar-${cleanEmail.replace(/[^a-z0-9]/g, '')}`;
+
+  if (isDatabaseConfigured) {
+    try {
+      const existingRows = await db.select().from(users).where(eq(users.uid, uid));
+      const user = existingRows[0];
+      if (!user) {
+        const err: any = new Error('No account found with this email address. Please create an account first.');
+        err.code = 'USER_NOT_FOUND';
+        throw err;
+      }
+
+      if (!user.passwordHash) {
+        // Legacy account created before password column existed: bind this password on first login
+        const newHash = hashPassword(password);
+        const updated = await db
+          .update(users)
+          .set({ passwordHash: newHash, updatedAt: new Date() })
+          .where(eq(users.uid, uid))
+          .returning();
+        return stripSensitiveUserFields(updated[0]);
+      }
+
+      const isValid = verifyPassword(password, user.passwordHash);
+      if (!isValid) {
+        const err: any = new Error('Please enter the correct password');
+        err.code = 'INVALID_PASSWORD';
+        throw err;
+      }
+
+      return stripSensitiveUserFields(user);
+    } catch (error: any) {
+      if (error?.code === 'USER_NOT_FOUND' || error?.code === 'INVALID_PASSWORD') {
+        throw error;
+      }
+      console.warn('Database query failed in authenticateUserWithPassword, falling back to memory store:', error);
+    }
+  }
+
+  const user = memoryStore.users.get(uid);
+  if (!user) {
+    const err: any = new Error('No account found with this email address. Please create an account first.');
+    err.code = 'USER_NOT_FOUND';
+    throw err;
+  }
+
+  if (!user.passwordHash) {
+    user.passwordHash = hashPassword(password);
+    memoryStore.users.set(uid, user);
+    return stripSensitiveUserFields(user);
+  }
+
+  if (!verifyPassword(password, user.passwordHash)) {
+    const err: any = new Error('Please enter the correct password');
+    err.code = 'INVALID_PASSWORD';
+    throw err;
+  }
+
+  return stripSensitiveUserFields(user);
+}
+
+export async function resetUserPassword(email: string, newPassword: string) {
+  const cleanEmail = email.trim().toLowerCase();
+  const uid = `scholar-${cleanEmail.replace(/[^a-z0-9]/g, '')}`;
+  const passwordHash = hashPassword(newPassword);
+
+  if (isDatabaseConfigured) {
+    try {
+      const existingRows = await db.select().from(users).where(eq(users.uid, uid));
+      if (!existingRows.length) {
+        const err: any = new Error('No account found with this email address.');
+        err.code = 'USER_NOT_FOUND';
+        throw err;
+      }
+      const updated = await db
+        .update(users)
+        .set({ passwordHash, updatedAt: new Date() })
+        .where(eq(users.uid, uid))
+        .returning();
+      return stripSensitiveUserFields(updated[0]);
+    } catch (error: any) {
+      if (error?.code === 'USER_NOT_FOUND') throw error;
+      console.warn('Database query failed in resetUserPassword, falling back to memory store:', error);
+    }
+  }
+
+  const user = memoryStore.users.get(uid);
+  if (!user) {
+    const err: any = new Error('No account found with this email address.');
+    err.code = 'USER_NOT_FOUND';
+    throw err;
+  }
+  user.passwordHash = passwordHash;
+  user.updatedAt = new Date();
+  memoryStore.users.set(uid, user);
+  return stripSensitiveUserFields(user);
 }
 
 export async function updateUserProfile(
   uid: string,
-  updates: { academicLevel?: string; targetGoal?: string; preferredDifficulty?: string; fullName?: string }
+  updates: {
+    fullName?: string;
+    avatarUrl?: string | null;
+    age?: number | null;
+    dateOfBirth?: string | null;
+    gender?: string | null;
+    institution?: string | null;
+    department?: string | null;
+    bio?: string | null;
+    academicLevel?: string;
+    targetGoal?: string;
+    preferredDifficulty?: string;
+  }
 ) {
   if (isDatabaseConfigured) {
     try {
@@ -87,7 +291,7 @@ export async function updateUserProfile(
         })
         .where(eq(users.uid, uid))
         .returning();
-      return result[0];
+      return stripSensitiveUserFields(result[0]);
     } catch (error) {
       console.warn('Database query failed in updateUserProfile, falling back to memory store:', error);
     }
@@ -105,7 +309,7 @@ export async function updateUserProfile(
   };
   const updated = { ...existing, ...updates, updatedAt: new Date() };
   memoryStore.users.set(uid, updated);
-  return updated;
+  return stripSensitiveUserFields(updated);
 }
 
 export async function getStudentDashboardData(uid: string) {

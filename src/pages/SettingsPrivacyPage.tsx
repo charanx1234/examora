@@ -273,13 +273,15 @@ export function SettingsPrivacyPage({
       {/* Minimized Account Profile & Saved Items Retention Control */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <Card className="lg:col-span-5">
-          <CardHeader>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-              Minimized Account Data
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Only Full Name and Email are required or stored
-            </p>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                Account & Personal Information
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Click below to edit your profile photo, name, age, DOB, and academic details
+              </p>
+            </div>
           </CardHeader>
           <CardContent className="space-y-3 text-xs">
             <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800">
@@ -291,12 +293,31 @@ export function SettingsPrivacyPage({
               <span className="font-mono text-slate-900 dark:text-white">{profile?.email}</span>
             </div>
             <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800">
-              <span className="text-slate-500">Phone / Physical Address</span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-medium">Not Collected (Data Minimization)</span>
+              <span className="text-slate-500">Age / Date of Birth</span>
+              <span className="font-mono text-slate-900 dark:text-white">
+                {profile?.age ? `${profile.age} yrs` : 'Not set'}{' '}
+                {profile?.dateOfBirth ? `· ${profile.dateOfBirth}` : ''}
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800">
+              <span className="text-slate-500">Institution / Dept</span>
+              <span className="text-slate-900 dark:text-white truncate max-w-[180px]">
+                {profile?.institution || profile?.department || 'Not set'}
+              </span>
             </div>
             <div className="flex items-center justify-between py-2">
               <span className="text-slate-500">User ID (`user_id`)</span>
               <span className="font-mono text-slate-600 dark:text-slate-400">{profile?.uid}</span>
+            </div>
+            <div className="pt-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full"
+                onClick={() => onNavigate('profile')}
+              >
+                <span>Edit Personal Information & Profile Photo</span>
+              </Button>
             </div>
           </CardContent>
         </Card>

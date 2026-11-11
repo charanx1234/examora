@@ -5,6 +5,9 @@ import * as dotenv from 'dotenv';
 import { requireAuth, AuthRequest } from './src/middleware/auth.ts';
 import {
   getOrCreateUser,
+  registerUserWithPassword,
+  authenticateUserWithPassword,
+  resetUserPassword,
   updateUserProfile,
   getStudentDashboardData,
   createDocumentRecord,
@@ -55,7 +58,117 @@ async function startServer() {
     return true;
   };
 
-  // 1. Synchronize Authenticated Student Profile
+  // 1a. Register Account with Email, Password & DPDP Act 2023 Consent (PostgreSQL backed)
+  app.post('/api/auth/register', async (req, res) => {
+    try {
+      const email = sanitizeUntrustedString(String(req.body.email || ''), 160).toLowerCase();
+      const password = String(req.body.password || '');
+      const fullName = sanitizeUntrustedString(String(req.body.fullName || ''), 120);
+      const consentGiven = Boolean(req.body.consentGiven);
+
+      if (!email || !email.includes('@')) {
+        return res.status(400).json({ error: 'Please enter a valid email address.', code: 'INVALID_EMAIL' });
+      }
+      if (password.length < 6) {
+        return res.status(400).json({
+          error: 'Password must be at least 6 characters long.',
+          code: 'WEAK_PASSWORD',
+        });
+      }
+      if (!consentGiven) {
+        return res.status(400).json({
+          error: 'DPDP Act 2023 Consent is required before creating an account.',
+          code: 'CONSENT_REQUIRED',
+        });
+      }
+
+      const user = await registerUserWithPassword({
+        email,
+        password,
+        fullName: fullName || email.split('@')[0],
+        avatarUrl: req.body.avatarUrl,
+      });
+
+      const latestConsent = await recordUserConsent(
+        user.uid,
+        true,
+        req.body.consentTextVersion || 'DPDP-2023-v1.0',
+        req.body.consentText
+      );
+
+      const sessionToken = `scholar-session:${user.uid}:${user.email}:${encodeURIComponent(user.fullName)}`;
+      res.status(201).json({ user, sessionToken, latestConsent });
+    } catch (error: any) {
+      if (error?.code === 'EMAIL_EXISTS') {
+        return res.status(409).json({ error: error.message, code: 'EMAIL_EXISTS' });
+      }
+      console.error('Error in /api/auth/register:', error);
+      res.status(500).json({ error: 'Failed to create account in database.' });
+    }
+  });
+
+  // 1b. Sign In with Email & Password (Verifies against PostgreSQL password_hash)
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const email = sanitizeUntrustedString(String(req.body.email || ''), 160).toLowerCase();
+      const password = String(req.body.password || '');
+
+      if (!email || !email.includes('@')) {
+        return res.status(400).json({ error: 'Please enter a valid email address.', code: 'INVALID_EMAIL' });
+      }
+      if (!password) {
+        return res.status(400).json({ error: 'Please enter the correct password', code: 'INVALID_PASSWORD' });
+      }
+
+      const user = await authenticateUserWithPassword(email, password);
+      const consentsHistory = await getUserConsentsHistory(user.uid);
+      const sessionToken = `scholar-session:${user.uid}:${user.email}:${encodeURIComponent(user.fullName)}`;
+
+      res.json({
+        user,
+        sessionToken,
+        latestConsent: consentsHistory[0] || null,
+      });
+    } catch (error: any) {
+      logSecurityEvent({
+        eventType: 'AUTH_FAILURE',
+        severity: 'MEDIUM',
+        ip: req.ip || 'unknown',
+        endpoint: '/api/auth/login',
+        details: `Failed login attempt: ${error?.code || 'UNKNOWN'}`,
+      });
+      if (error?.code === 'INVALID_PASSWORD') {
+        return res.status(401).json({ error: 'Please enter the correct password', code: 'INVALID_PASSWORD' });
+      }
+      if (error?.code === 'USER_NOT_FOUND') {
+        return res.status(404).json({ error: error.message, code: 'USER_NOT_FOUND' });
+      }
+      res.status(401).json({ error: 'Please enter the correct password', code: 'INVALID_PASSWORD' });
+    }
+  });
+
+  // 1c. Reset Password in PostgreSQL
+  app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+      const email = sanitizeUntrustedString(String(req.body.email || ''), 160).toLowerCase();
+      const newPassword = String(req.body.newPassword || '');
+      if (!email || !email.includes('@')) {
+        return res.status(400).json({ error: 'Please enter your registered email address.' });
+      }
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: 'New password must be at least 6 characters long.' });
+      }
+      await resetUserPassword(email, newPassword);
+      res.json({ reset: true, message: 'Your password has been updated. You may now sign in.' });
+    } catch (error: any) {
+      if (error?.code === 'USER_NOT_FOUND') {
+        return res.status(404).json({ error: error.message, code: 'USER_NOT_FOUND' });
+      }
+      res.status(500).json({ error: 'Failed to reset password.' });
+    }
+  });
+
+  // 1d. Synchronize Authenticated Student Profile
   app.post('/api/auth/sync', requireAuth, async (req: AuthRequest, res) => {
     try {
       const uid = req.user!.uid;
@@ -80,21 +193,64 @@ async function startServer() {
     }
   });
 
-  // 2. Update Student Profile Preferences
+  // 2. Update Student Personal Information & Profile Preferences
   app.patch('/api/auth/profile', requireAuth, async (req: AuthRequest, res) => {
     try {
       const uid = req.user!.uid;
-      const { fullName, academicLevel, targetGoal, preferredDifficulty } = req.body;
-      const updated = await updateUserProfile(uid, {
+      const {
         fullName,
+        avatarUrl,
+        age,
+        dateOfBirth,
+        gender,
+        institution,
+        department,
+        bio,
         academicLevel,
         targetGoal,
         preferredDifficulty,
+      } = req.body;
+
+      const parsedAge =
+        age === null || age === '' || age === undefined
+          ? null
+          : Math.max(5, Math.min(120, Number(age) || 0));
+
+      const updated = await updateUserProfile(uid, {
+        ...(fullName !== undefined ? { fullName: sanitizeUntrustedString(String(fullName), 120) } : {}),
+        ...(avatarUrl !== undefined
+          ? { avatarUrl: avatarUrl === null || avatarUrl === '' ? null : String(avatarUrl).slice(0, 1500000) }
+          : {}),
+        ...(age !== undefined ? { age: parsedAge } : {}),
+        ...(dateOfBirth !== undefined
+          ? { dateOfBirth: dateOfBirth ? sanitizeUntrustedString(String(dateOfBirth), 30) : null }
+          : {}),
+        ...(gender !== undefined
+          ? { gender: gender ? sanitizeUntrustedString(String(gender), 40) : null }
+          : {}),
+        ...(institution !== undefined
+          ? { institution: institution ? sanitizeUntrustedString(String(institution), 160) : null }
+          : {}),
+        ...(department !== undefined
+          ? { department: department ? sanitizeUntrustedString(String(department), 140) : null }
+          : {}),
+        ...(bio !== undefined
+          ? { bio: bio ? sanitizeUntrustedString(String(bio), 800) : null }
+          : {}),
+        ...(academicLevel !== undefined
+          ? { academicLevel: sanitizeUntrustedString(String(academicLevel), 80) }
+          : {}),
+        ...(targetGoal !== undefined
+          ? { targetGoal: sanitizeUntrustedString(String(targetGoal), 120) }
+          : {}),
+        ...(preferredDifficulty !== undefined
+          ? { preferredDifficulty: sanitizeUntrustedString(String(preferredDifficulty), 30) }
+          : {}),
       });
       res.json({ user: updated });
     } catch (error: any) {
       console.error('Error in /api/auth/profile:', error);
-      res.status(500).json({ error: error.message || 'Failed to update profile' });
+      res.status(500).json({ error: error.message || 'Failed to update personal information' });
     }
   });
 

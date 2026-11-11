@@ -16,10 +16,17 @@ export const users = pgTable(
   'users',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    uid: text('uid').notNull().unique(), // Firebase Auth UID
+    uid: text('uid').notNull().unique(), // Firebase Auth UID or Scholar UID
     email: text('email').notNull(),
+    passwordHash: text('password_hash'), // Scrypt salted password hash (never plaintext)
     fullName: text('full_name').notNull().default('Scholar'),
     avatarUrl: text('avatar_url'),
+    age: integer('age'),
+    dateOfBirth: text('date_of_birth'),
+    gender: text('gender'),
+    institution: text('institution'),
+    department: text('department'),
+    bio: text('bio'),
     academicLevel: text('academic_level').notNull().default('University / Undergraduate'),
     targetGoal: text('target_goal').notNull().default('Honors Mastery'),
     preferredDifficulty: text('preferred_difficulty').notNull().default('Medium'),

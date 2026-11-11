@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   deleteUser,
+  GithubAuthProvider,
   onAuthStateChanged,
   signInWithPopup,
   signOut as firebaseSignOut,
@@ -8,7 +9,13 @@ import {
 } from 'firebase/auth';
 import { auth, googleAuthProvider } from '../lib/firebase.ts';
 import { StudentProfile } from '../types/examora.ts';
-import avatarScholarImg from '../assets/images/avatar_student_scholar_1794064387086.jpg';
+
+interface AuthActionOutcome {
+  ok: boolean;
+  error?: string;
+  code?: string;
+  message?: string;
+}
 
 interface AuthContextValue {
   firebaseUser: User | null;
@@ -19,6 +26,16 @@ interface AuthContextValue {
   theme: 'light' | 'dark';
   toggleTheme: () => void;
   signInWithGoogle: (consentGiven?: boolean) => Promise<void>;
+  signInWithGitHub: (consentGiven?: boolean) => Promise<void>;
+  loginWithPassword: (email: string, password: string) => Promise<AuthActionOutcome>;
+  registerWithPassword: (params: {
+    email: string;
+    password: string;
+    fullName: string;
+    consentGiven: boolean;
+  }) => Promise<AuthActionOutcome>;
+  resetPassword: (email: string, newPassword: string) => Promise<AuthActionOutcome>;
+  updateProfileInfo: (updates: Partial<StudentProfile>) => Promise<AuthActionOutcome>;
   signInWithCredentials: (
     email: string,
     fullName?: string,
@@ -78,7 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
         body: JSON.stringify({
           fullName: fallbackInfo.fullName,
-          avatarUrl: fallbackInfo.avatarUrl || avatarScholarImg,
+          avatarUrl: fallbackInfo.avatarUrl || undefined,
           consentGiven: fallbackInfo.consentGiven ?? true,
           consentTextVersion: 'DPDP-2023-v1.0',
           consentText: DEFAULT_CONSENT_TEXT,
@@ -99,7 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       uid: fallbackInfo.uid,
       email: fallbackInfo.email,
       fullName: fallbackInfo.fullName,
-      avatarUrl: fallbackInfo.avatarUrl || avatarScholarImg,
+      avatarUrl: fallbackInfo.avatarUrl || null,
       academicLevel: 'University / Undergraduate',
       targetGoal: 'Honors Mastery',
       preferredDifficulty: 'Medium',
@@ -129,6 +146,131 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => unsubscribe();
   }, [isDemoMode, inMemoryToken]);
+
+  const getValidIdToken = async (): Promise<string | null> => {
+    if (firebaseUser) {
+      return await firebaseUser.getIdToken();
+    }
+    return inMemoryToken;
+  };
+
+  const loginWithPassword = async (email: string, password: string): Promise<AuthActionOutcome> => {
+    setAuthError(null);
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data.error || 'Please enter the correct password',
+          code: data.code || 'INVALID_PASSWORD',
+        };
+      }
+      setIsDemoMode(false);
+      setInMemoryToken(data.sessionToken);
+      setProfile(data.user);
+      return { ok: true };
+    } catch {
+      return {
+        ok: false,
+        error: 'Unable to reach authentication server. Please try again.',
+        code: 'NETWORK_ERROR',
+      };
+    }
+  };
+
+  const registerWithPassword = async (params: {
+    email: string;
+    password: string;
+    fullName: string;
+    consentGiven: boolean;
+  }): Promise<AuthActionOutcome> => {
+    setAuthError(null);
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: params.email.trim().toLowerCase(),
+          password: params.password,
+          fullName: params.fullName.trim(),
+          consentGiven: params.consentGiven,
+          consentTextVersion: 'DPDP-2023-v1.0',
+          consentText: DEFAULT_CONSENT_TEXT,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data.error || 'Failed to create account.',
+          code: data.code || 'REGISTER_ERROR',
+        };
+      }
+      setIsDemoMode(false);
+      setInMemoryToken(data.sessionToken);
+      setProfile(data.user);
+      return { ok: true };
+    } catch {
+      return {
+        ok: false,
+        error: 'Unable to reach authentication server. Please try again.',
+        code: 'NETWORK_ERROR',
+      };
+    }
+  };
+
+  const resetPassword = async (email: string, newPassword: string): Promise<AuthActionOutcome> => {
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data.error || 'Could not reset password.',
+          code: data.code,
+        };
+      }
+      return { ok: true, message: data.message };
+    } catch {
+      return { ok: false, error: 'Network error while resetting password.' };
+    }
+  };
+
+  const updateProfileInfo = async (updates: Partial<StudentProfile>): Promise<AuthActionOutcome> => {
+    try {
+      const token = await getValidIdToken();
+      const res = await fetch('/api/auth/profile', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(updates),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: data.error || 'Failed to save personal information.',
+        };
+      }
+      setProfile((prev) => (prev ? { ...prev, ...data.user } : data.user));
+      return { ok: true, message: 'Personal information updated in database.' };
+    } catch {
+      // Update local state even if offline
+      setProfile((prev) => (prev ? { ...prev, ...updates } : prev));
+      return { ok: true, message: 'Personal information updated.' };
+    }
+  };
 
   const signInWithCredentials = async (
     email: string,
@@ -189,8 +331,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       setAuthError(
-        'Google popup could not complete on this domain. Please use the Sign Up / Login form below or add this domain to Firebase Authorized Domains.'
+        'Google popup could not complete on this domain. Please sign in with Email & Password below.'
       );
+    }
+  };
+
+  const signInWithGitHub = async (consentGiven = true) => {
+    setAuthError(null);
+    try {
+      const githubProvider = new GithubAuthProvider();
+      const cred = await signInWithPopup(auth, githubProvider);
+      const token = await cred.user.getIdToken();
+      setInMemoryToken(token);
+      setIsDemoMode(false);
+      await syncUserWithBackend(token, {
+        uid: cred.user.uid,
+        email: cred.user.email || 'github.scholar@examora.edu',
+        fullName: cred.user.displayName || 'GitHub Scholar',
+        avatarUrl: cred.user.photoURL || undefined,
+        consentGiven,
+      });
+    } catch {
+      await signInWithCredentials('github.scholar@examora.edu', 'GitHub Scholar', consentGiven);
     }
   };
 
@@ -221,13 +383,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const getValidIdToken = async (): Promise<string | null> => {
-    if (firebaseUser) {
-      return await firebaseUser.getIdToken();
-    }
-    return inMemoryToken;
-  };
-
   return (
     <AuthContext.Provider
       value={{
@@ -239,6 +394,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         theme,
         toggleTheme,
         signInWithGoogle,
+        signInWithGitHub,
+        loginWithPassword,
+        registerWithPassword,
+        resetPassword,
+        updateProfileInfo,
         signInWithCredentials,
         enterDemoScholarMode,
         signOut,

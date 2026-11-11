@@ -1,5 +1,6 @@
 export type AppView =
   | 'landing'
+  | 'login'
   | 'dashboard'
   | 'documents'
   | 'create-exam'
@@ -7,6 +8,7 @@ export type AppView =
   | 'exam-result'
   | 'analytics'
   | 'adaptive'
+  | 'profile'
   | 'settings'
   | 'privacy-policy';
 
@@ -25,6 +27,12 @@ export interface StudentProfile {
   email: string;
   fullName: string;
   avatarUrl?: string | null;
+  age?: number | null;
+  dateOfBirth?: string | null;
+  gender?: string | null;
+  institution?: string | null;
+  department?: string | null;
+  bio?: string | null;
   academicLevel: string;
   targetGoal: string;
   preferredDifficulty: 'Easy' | 'Medium' | 'Hard' | 'Expert';

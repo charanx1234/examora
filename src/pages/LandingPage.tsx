@@ -17,9 +17,10 @@ import avatarScholarImg from '../assets/images/avatar_student_scholar_1794064387
 
 interface LandingPageProps {
   onOpenPrivacyPolicy: () => void;
+  onOpenLogin: () => void;
 }
 
-export function LandingPage({ onOpenPrivacyPolicy }: LandingPageProps) {
+export function LandingPage({ onOpenPrivacyPolicy, onOpenLogin }: LandingPageProps) {
   const { signInWithGoogle, signInWithCredentials, enterDemoScholarMode, authError, theme, toggleTheme } =
     useAuth();
 
@@ -159,12 +160,13 @@ export function LandingPage({ onOpenPrivacyPolicy }: LandingPageProps) {
         </nav>
 
         <div className="flex items-center gap-3 shrink-0">
-          <a
-            href="#signup-form"
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white transition-colors"
+          <button
+            type="button"
+            onClick={onOpenLogin}
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
-            Create Account
-          </a>
+            Sign In
+          </button>
         </div>
       </header>
 
@@ -303,16 +305,16 @@ export function LandingPage({ onOpenPrivacyPolicy }: LandingPageProps) {
                     <Button
                       type="button"
                       variant="secondary"
-                      onClick={handleGoogleSignIn}
+                      onClick={onOpenLogin}
                     >
-                      <span>Sign In with Google</span>
+                      <span>Sign In with Password</span>
                     </Button>
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={handleInstantScholarWorkspace}
+                      onClick={handleGoogleSignIn}
                     >
-                      <span>Explore Scholar Workspace</span>
+                      <span>Google Sign-In</span>
                     </Button>
                   </div>
                 </form>
