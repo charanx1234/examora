@@ -5,12 +5,17 @@ import {
   Check,
   CheckCircle2,
   Database,
+  ExternalLink,
   Eye,
   EyeOff,
+  Lock,
   Moon,
+  ShieldCheck,
   Sun,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.tsx';
+import { ButtonLoader } from '../components/feedback/LoadingSystem.tsx';
+import { mapErrorToUserMessage } from '../utils/errorHandler.ts';
 
 interface LoginPageProps {
   initialMode?: 'login' | 'signup';
@@ -31,63 +36,72 @@ const INTEGRATION_NODES: IntegrationNode[] = [
     id: 'curriculum',
     title: 'Curriculum & Notes Parser',
     role: 'Ingestion Layer',
-    description: 'Extracts chapters, syllabus hierarchies, and testable concepts from PDF, DOCX, PPT, and study notes.',
+    description:
+      'Extracts chapters, syllabus hierarchies, and testable concepts from PDF, DOCX, PPT, and study notes.',
     variant: 'light',
   },
   {
     id: 'rubric',
     title: 'Rubric Calibration Engine',
     role: 'Grading Standard',
-    description: 'Builds multi-step university marking schemes with deterministic partial-credit allocation.',
+    description:
+      'Builds multi-step university marking schemes with deterministic partial-credit allocation.',
     variant: 'dark',
   },
   {
     id: 'timed-studio',
     title: 'ExamLab Timed Studio',
     role: 'Assessment Player',
-    description: 'Distraction-free countdown examination player with question palette and auto-save persistence.',
+    description:
+      'Distraction-free countdown examination player with question palette and auto-save persistence.',
     variant: 'light',
   },
   {
     id: 'adaptive',
     title: 'Adaptive Mastery Engine',
     role: 'Longitudinal Tracking',
-    description: 'Tracks accuracy across every subtopic and synthesizes targeted revision question papers.',
+    description:
+      'Tracks accuracy across every subtopic and synthesizes targeted revision question papers.',
     variant: 'dark',
   },
   {
     id: 'examora-hub',
     title: 'EXAMORA Core Platform',
     role: 'Central Intelligence Hub',
-    description: 'Unifies AI question synthesis, timed examination delivery, PostgreSQL credential vault, and rubric evaluation.',
+    description:
+      'Unifies AI question synthesis, timed examination delivery, PostgreSQL credential vault, and rubric evaluation.',
     variant: 'center',
   },
   {
     id: 'sandbox',
     title: 'Code & Math Sandbox',
     role: 'Multi-Modal Input',
-    description: 'Supports coding test-case verification, LaTeX mathematical derivations, and handwritten scan grading.',
+    description:
+      'Supports coding test-case verification, LaTeX mathematical derivations, and handwritten scan grading.',
     variant: 'dark',
   },
   {
     id: 'gemini',
     title: 'Gemini Structured AI',
     role: 'AI Examiner Provider',
-    description: 'Generates schema-validated MCQ distractors, descriptive prompts, and rubric-guided evaluations.',
+    description:
+      'Generates schema-validated MCQ distractors, descriptive prompts, and rubric-guided evaluations.',
     variant: 'light',
   },
   {
     id: 'database',
     title: 'PostgreSQL & Supabase Vault',
     role: 'Persistent Relational DB',
-    description: 'Stores user profiles, scrypt-salted password hashes, DPDP consent ledgers, exams, and transcripts.',
+    description:
+      'Stores user profiles, scrypt-salted password hashes, DPDP consent ledgers, exams, and transcripts.',
     variant: 'dark',
   },
   {
     id: 'privacy',
     title: 'DPDP 2023 Privacy Shield',
     role: 'Data Governance',
-    description: 'Enforces explicit signup consent, one-click JSON data portability, and complete account erasure.',
+    description:
+      'Enforces explicit signup consent, one-click JSON data portability, and complete account erasure.',
     variant: 'light',
   },
 ];
@@ -101,9 +115,11 @@ export function LoginPage({
     loginWithPassword,
     registerWithPassword,
     resetPassword,
+    getSavedOAuthAccounts,
     signInWithGoogle,
     signInWithGitHub,
-    enterDemoScholarMode,
+    completeOAuthSignIn,
+    authError,
     theme,
     toggleTheme,
   } = useAuth();
@@ -124,6 +140,17 @@ export function LoginPage({
   const [resetSuccessMsg, setResetSuccessMsg] = useState<string | null>(null);
   const [showTroubleHelper, setShowTroubleHelper] = useState(false);
 
+  // Google / GitHub OAuth Verification & DPDP Act 2023 Privacy Policy Consent Popup State
+  const [oauthPromptProvider, setOauthPromptProvider] = useState<'google' | 'github' | null>(null);
+  const [oauthStep, setOauthStep] = useState<'account' | 'consent'>('account');
+  const [oauthUseCustomAccount, setOauthUseCustomAccount] = useState(false);
+  const [oauthEmail, setOauthEmail] = useState('');
+  const [oauthName, setOauthName] = useState('');
+  const [oauthConsentChecked, setOauthConsentChecked] = useState(false);
+  const [oauthFirebaseToken, setOauthFirebaseToken] = useState<string | undefined>(undefined);
+  const [oauthFirebaseUid, setOauthFirebaseUid] = useState<string | undefined>(undefined);
+  const [oauthError, setOauthError] = useState<string | null>(null);
+
   const [selectedNodeId, setSelectedNodeId] = useState<string>('examora-hub');
   const activeNode =
     INTEGRATION_NODES.find((n) => n.id === selectedNodeId) || INTEGRATION_NODES[4];
@@ -132,6 +159,100 @@ export function LoginPage({
     setPasswordError(null);
     setFormError(null);
     setResetSuccessMsg(null);
+  };
+
+  const handleOAuthButtonClick = async (provider: 'google' | 'github') => {
+    clearErrors();
+    setOauthError(null);
+    setOauthConsentChecked(false);
+
+    const outcome =
+      provider === 'google' ? await signInWithGoogle() : await signInWithGitHub();
+
+    if (outcome.ok) {
+      return;
+    }
+
+    const savedAccounts = getSavedOAuthAccounts();
+    setOauthPromptProvider(outcome.needsAccountPrompt || provider);
+
+    if (outcome.verifiedEmail) {
+      // Firebase popup returned a verified Google/GitHub user -> show Step 2 (DPDP Privacy Policy Consent Verification)
+      setOauthEmail(outcome.verifiedEmail);
+      setOauthName(outcome.verifiedName || outcome.verifiedEmail.split('@')[0]);
+      setOauthFirebaseToken(outcome.firebaseToken);
+      setOauthFirebaseUid(outcome.firebaseUid);
+      setOauthStep('consent');
+      setOauthUseCustomAccount(false);
+    } else {
+      // Open Step 1 (Account Chooser / Email Verification) -> then Step 2 (DPDP Privacy Policy Consent Verification)
+      setOauthFirebaseToken(undefined);
+      setOauthFirebaseUid(undefined);
+      setOauthEmail(email.trim() || '');
+      setOauthName(fullName.trim() || '');
+      setOauthUseCustomAccount(savedAccounts.length === 0);
+      setOauthStep('account');
+    }
+  };
+
+  const handleSelectSavedOAuthAccount = (acct: { email: string; fullName: string }) => {
+    setOauthEmail(acct.email);
+    setOauthName(acct.fullName);
+    setOauthError(null);
+    setOauthConsentChecked(false);
+    setOauthStep('consent');
+  };
+
+  const handleOAuthAccountNext = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = oauthEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setOauthError(
+        `Please enter a valid ${oauthPromptProvider === 'google' ? 'Google' : 'GitHub'} email address.`
+      );
+      return;
+    }
+    const resolvedName =
+      oauthName.trim() ||
+      cleanEmail
+        .split('@')[0]
+        .replace(/[._-]/g, ' ')
+        .replace(/\b\w/g, (l) => l.toUpperCase()) ||
+      'Scholar';
+    setOauthEmail(cleanEmail);
+    setOauthName(resolvedName);
+    setOauthError(null);
+    setOauthConsentChecked(false);
+    setOauthStep('consent');
+  };
+
+  const handleOAuthConsentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!oauthConsentChecked) {
+      setOauthError(
+        'Consent Required: Please check the Privacy Policy & DPDP Act 2023 consent box to continue.'
+      );
+      return;
+    }
+    if (!oauthPromptProvider) return;
+
+    setOauthError(null);
+    setSubmitting(true);
+    const res = await completeOAuthSignIn({
+      provider: oauthPromptProvider,
+      email: oauthEmail,
+      fullName: oauthName,
+      consentGiven: true,
+      firebaseToken: oauthFirebaseToken,
+      firebaseUid: oauthFirebaseUid,
+    });
+    setSubmitting(false);
+
+    if (!res.ok) {
+      setOauthError(res.error || 'Authentication failed.');
+      return;
+    }
+    setOauthPromptProvider(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -156,7 +277,7 @@ export function LoginPage({
         setFormError(outcome.error || 'Could not reset password for this email.');
         return;
       }
-      setResetSuccessMsg(outcome.message || 'Password updated in database. Please sign in.');
+      setResetSuccessMsg(outcome.message || 'Password updated. Please sign in.');
       setMode('login');
       setPassword('');
       return;
@@ -164,7 +285,7 @@ export function LoginPage({
 
     if (mode === 'login') {
       if (!password) {
-        setPasswordError('Please enter the correct password');
+        setPasswordError("We couldn't sign you in. Your email or password may be incorrect.");
         return;
       }
       setSubmitting(true);
@@ -172,11 +293,14 @@ export function LoginPage({
       setSubmitting(false);
       if (!outcome.ok) {
         if (outcome.code === 'INVALID_PASSWORD') {
-          setPasswordError('Please enter the correct password');
+          setPasswordError("We couldn't sign you in. Your email or password may be incorrect.");
         } else if (outcome.code === 'USER_NOT_FOUND') {
-          setFormError(outcome.error || 'No account found with this email. Click "Create account" below.');
+          setFormError(
+            outcome.error || 'No account found with this email. Click "Create account" below.'
+          );
         } else {
-          setPasswordError(outcome.error || 'Please enter the correct password');
+          const mapped = mapErrorToUserMessage(outcome.error || outcome.code, 'auth');
+          setPasswordError(mapped.message);
         }
       }
       return;
@@ -193,7 +317,7 @@ export function LoginPage({
     }
     if (!consentChecked) {
       setFormError(
-        'Consent Required: Please check the Privacy Policy & DPDP Act 2023 consent box to create an account.'
+        'Consent Required: Please check the mandatory Privacy Policy consent box before creating an account.'
       );
       return;
     }
@@ -208,12 +332,302 @@ export function LoginPage({
     setSubmitting(false);
 
     if (!outcome.ok) {
-      setFormError(outcome.error || 'Could not create account.');
+      if (outcome.code === 'EMAIL_EXISTS') {
+        setFormError(outcome.error || 'An account with this email already exists.');
+      } else {
+        const mapped = mapErrorToUserMessage(outcome.error || outcome.code, 'auth');
+        setFormError(mapped.message);
+      }
     }
   };
 
+  const activeErrorMsg = formError || authError;
+  const savedOAuthAccounts = oauthPromptProvider ? getSavedOAuthAccounts() : [];
+
   return (
     <div className="min-h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col lg:grid lg:grid-cols-12 p-4 sm:p-6 gap-6">
+      {/* Google / GitHub OAuth Verification & DPDP Act 2023 Privacy Policy Consent Popup */}
+      {oauthPromptProvider && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 backdrop-blur-xs p-4">
+          <div className="w-full max-w-[430px] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden">
+            {/* Top Provider Header Bar (Authentic Google / GitHub OAuth Header) */}
+            <div className="px-6 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/60 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                {oauthPromptProvider === 'google' ? (
+                  <span className="w-6 h-6 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-xs font-bold text-blue-600">
+                    G
+                  </span>
+                ) : (
+                  <span className="w-6 h-6 rounded-md bg-slate-950 dark:bg-white text-white dark:text-slate-950 flex items-center justify-center">
+                    <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                      <path
+                        fillRule="evenodd"
+                        clipRule="evenodd"
+                        d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
+                      />
+                    </svg>
+                  </span>
+                )}
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                  {oauthPromptProvider === 'google'
+                    ? 'Sign in with Google'
+                    : 'Sign in with GitHub'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOauthPromptProvider(null)}
+                className="text-xs text-slate-400 hover:text-slate-700 dark:hover:text-white px-1.5 py-0.5 rounded cursor-pointer"
+                aria-label="Close OAuth popup"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {/* STEP 1: Choose an Account or Verify Email */}
+              {oauthStep === 'account' && (
+                <>
+                  <div className="space-y-1 text-center">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                      Choose an account
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      to continue to <strong className="text-slate-900 dark:text-white">EXAMORA</strong>
+                    </p>
+                  </div>
+
+                  {savedOAuthAccounts.length > 0 && !oauthUseCustomAccount ? (
+                    <div className="space-y-2">
+                      <div className="divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                        {savedOAuthAccounts.map((acct) => (
+                          <button
+                            key={acct.email}
+                            type="button"
+                            onClick={() => handleSelectSavedOAuthAccount(acct)}
+                            className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-800/70 transition-colors cursor-pointer"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                                {acct.fullName}
+                              </div>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                {acct.email}
+                              </div>
+                            </div>
+                            <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400 shrink-0 ml-2">
+                              Select →
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOauthEmail('');
+                          setOauthName('');
+                          setOauthUseCustomAccount(true);
+                        }}
+                        className="w-full py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                      >
+                        + Use another {oauthPromptProvider === 'google' ? 'Google' : 'GitHub'} account
+                      </button>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleOAuthAccountNext} className="space-y-3.5">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                          {oauthPromptProvider === 'google' ? 'Google Email' : 'GitHub Email'} *
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          autoFocus
+                          value={oauthEmail}
+                          onChange={(e) => {
+                            setOauthEmail(e.target.value);
+                            setOauthError(null);
+                          }}
+                          placeholder={
+                            oauthPromptProvider === 'google'
+                              ? 'you@gmail.com'
+                              : 'you@users.noreply.github.com'
+                          }
+                          className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                          Full Name (Data Minimization: Only Name &amp; Email Collected)
+                        </label>
+                        <input
+                          type="text"
+                          value={oauthName}
+                          onChange={(e) => setOauthName(e.target.value)}
+                          placeholder="Ram Charan"
+                          className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400"
+                        />
+                      </div>
+
+                      {oauthError && (
+                        <div className="flex items-center gap-1.5 text-red-600 dark:text-red-400 text-[11px] font-medium">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>{oauthError}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between pt-2">
+                        {savedOAuthAccounts.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setOauthUseCustomAccount(false)}
+                            className="text-xs font-medium text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                          >
+                            ← Back to saved accounts
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setOauthPromptProvider(null)}
+                            className="text-xs font-medium text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        )}
+
+                        <button
+                          type="submit"
+                          className="px-4 py-2 rounded-xl bg-slate-950 text-white dark:bg-white dark:text-slate-950 text-xs font-semibold hover:opacity-90 cursor-pointer"
+                        >
+                          Next: Verify &amp; Privacy Policy →
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </>
+              )}
+
+              {/* STEP 2: OAuth Verification & DPDP Act 2023 Privacy Policy Consent Screen */}
+              {oauthStep === 'consent' && (
+                <form onSubmit={handleOAuthConsentSubmit} className="space-y-4">
+                  <div className="space-y-1.5 text-center">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Account Verified · Privacy &amp; Consent Notice</span>
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                      Sign in to EXAMORA
+                    </h3>
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-300">
+                      <span className="font-semibold">{oauthName}</span>
+                      <span className="text-slate-400">·</span>
+                      <span className="font-mono text-[11px]">{oauthEmail}</span>
+                      <button
+                        type="button"
+                        onClick={() => setOauthStep('account')}
+                        className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline ml-1 cursor-pointer"
+                      >
+                        Change
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Embedded Plain-Language Privacy Policy Summary (DPDP Act 2023) */}
+                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/60 space-y-2 text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                    <div className="flex items-center justify-between font-semibold text-slate-900 dark:text-white">
+                      <span className="flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <span>DPDP Act 2023 Data Protection Summary</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={onOpenPrivacyPolicy}
+                        className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                      >
+                        <span>Full Policy (/privacy-policy)</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <ul className="list-disc pl-4 space-y-1">
+                      <li>
+                        <strong>What is collected:</strong> Only your Full Name, Email, uploaded
+                        photos/scans, and diagnosis/evaluation history.
+                      </li>
+                      <li>
+                        <strong>Why:</strong> To provide plant diagnosis, AI rubric evaluation, and
+                        save your garden/study history.
+                      </li>
+                      <li>
+                        <strong>Retention &amp; Zero Selling:</strong> Never sold to third parties.
+                        Kept only while you keep your saved items or account. You can export JSON or
+                        delete your account anytime in <em>Privacy &amp; Settings</em>.
+                      </li>
+                    </ul>
+                  </div>
+
+                  {/* Mandatory Unchecked Consent Checkbox */}
+                  <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                    <label className="flex items-start gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={oauthConsentChecked}
+                        onChange={(e) => {
+                          setOauthConsentChecked(e.target.checked);
+                          setOauthError(null);
+                        }}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer"
+                      />
+                      <span className="text-[11px] text-slate-700 dark:text-slate-200 leading-relaxed">
+                        I agree to the{' '}
+                        <button
+                          type="button"
+                          onClick={onOpenPrivacyPolicy}
+                          className="font-semibold underline text-slate-900 dark:text-white cursor-pointer"
+                        >
+                          Privacy Policy
+                        </button>{' '}
+                        and consent to my data (name, email, uploaded photos) being used to provide
+                        plant diagnosis.
+                      </span>
+                    </label>
+                  </div>
+
+                  {oauthError && (
+                    <div className="flex items-center gap-1.5 text-red-600 dark:text-red-400 text-[11px] font-medium">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{oauthError}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setOauthPromptProvider(null)}
+                      className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={submitting}
+                      className="px-4 py-2 rounded-xl bg-slate-950 text-white dark:bg-white dark:text-slate-950 text-xs font-semibold hover:opacity-90 disabled:opacity-60 cursor-pointer"
+                    >
+                      {submitting ? (
+                        <ButtonLoader label="Signing in..." size="sm" />
+                      ) : (
+                        'Allow & Continue'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Left Column: Clean Centered Auth Studio (Inspired by AI Labs Login Layout) */}
       <div className="lg:col-span-5 flex flex-col justify-between px-4 sm:px-8 py-4">
         {/* Top Minimal Utility Bar */}
@@ -288,18 +702,18 @@ export function LoginPage({
                 {mode === 'login'
                   ? 'Please sign in or sign up with your Google or email account.'
                   : mode === 'signup'
-                  ? 'Register your scholar profile and password in our PostgreSQL database.'
+                  ? 'Data Minimization: Only Full Name and Email are required.'
                   : 'Enter your registered email and choose a new password.'}
               </p>
             </div>
           </div>
 
-          {/* OAuth Provider Buttons (Google & GitHub matching screenshot) */}
+          {/* OAuth Provider Buttons (Google & GitHub) */}
           {mode !== 'reset' && (
             <div className="space-y-2.5">
               <button
                 type="button"
-                onClick={() => signInWithGoogle(true)}
+                onClick={() => handleOAuthButtonClick('google')}
                 className="w-full relative flex items-center justify-center py-2.5 px-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800/80 text-xs font-semibold text-slate-800 dark:text-slate-100 transition-colors cursor-pointer"
               >
                 <span className="absolute left-2.5 w-7 h-7 rounded-lg bg-slate-950 dark:bg-white text-white dark:text-slate-950 flex items-center justify-center font-bold text-xs">
@@ -310,7 +724,7 @@ export function LoginPage({
 
               <button
                 type="button"
-                onClick={() => signInWithGitHub(true)}
+                onClick={() => handleOAuthButtonClick('github')}
                 className="w-full relative flex items-center justify-center py-2.5 px-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800/80 text-xs font-semibold text-slate-800 dark:text-slate-100 transition-colors cursor-pointer"
               >
                 <span className="absolute left-2.5 w-7 h-7 rounded-lg bg-slate-950 dark:bg-white text-white dark:text-slate-950 flex items-center justify-center">
@@ -338,7 +752,7 @@ export function LoginPage({
             </div>
           )}
 
-          {/* Mode Segmented Switcher (Sign In vs Sign Up) */}
+          {/* Mode Segmented Switcher (Sign In vs Create Account) */}
           {mode !== 'reset' && (
             <div className="grid grid-cols-2 p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800">
               <button
@@ -397,7 +811,7 @@ export function LoginPage({
                     setFullName(e.target.value);
                     clearErrors();
                   }}
-                  placeholder="Grace Hopper"
+                  placeholder="Ram Charan"
                   autoComplete="name"
                   className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 transition-all"
                 />
@@ -419,7 +833,7 @@ export function LoginPage({
                   setEmail(e.target.value);
                   clearErrors();
                 }}
-                placeholder="grace@org.com"
+                placeholder="you@example.com"
                 autoComplete="email"
                 className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 dark:focus:ring-slate-400 transition-all"
               />
@@ -459,7 +873,6 @@ export function LoginPage({
                 </button>
               </div>
 
-              {/* Inline Password Error matching reference screenshot */}
               {passwordError && (
                 <div className="flex items-center gap-1.5 pt-1 text-red-600 dark:text-red-400">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0 fill-red-600 text-white dark:fill-red-500 dark:text-slate-950" />
@@ -468,10 +881,10 @@ export function LoginPage({
               )}
             </div>
 
-            {formError && (
+            {activeErrorMsg && (
               <div className="flex items-start gap-1.5 p-2.5 rounded-xl bg-red-50/80 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                <span className="text-[11px] font-medium leading-relaxed">{formError}</span>
+                <span className="text-[11px] font-medium leading-relaxed">{activeErrorMsg}</span>
               </div>
             )}
 
@@ -531,7 +944,7 @@ export function LoginPage({
                       Privacy Policy
                     </button>{' '}
                     and consent to my data (name, email, uploaded photos) being used to provide plant
-                    diagnosis and AI examination evaluation.
+                    diagnosis.
                   </span>
                 </label>
               </div>
@@ -543,13 +956,24 @@ export function LoginPage({
               disabled={submitting}
               className="w-full py-2.5 px-4 rounded-xl bg-slate-950 hover:bg-slate-800 disabled:opacity-60 text-white dark:bg-white dark:hover:bg-slate-200 dark:text-slate-950 text-xs font-semibold transition-colors shadow-xs cursor-pointer"
             >
-              {submitting
-                ? 'Authenticating...'
-                : mode === 'login'
-                ? 'Continue'
-                : mode === 'signup'
-                ? 'Create Account & Continue'
-                : 'Update Password'}
+              {submitting ? (
+                <ButtonLoader
+                  label={
+                    mode === 'login'
+                      ? 'Signing in...'
+                      : mode === 'signup'
+                      ? 'Creating account...'
+                      : 'Updating password...'
+                  }
+                  size="sm"
+                />
+              ) : mode === 'login' ? (
+                'Continue'
+              ) : mode === 'signup' ? (
+                'Create Account & Continue'
+              ) : (
+                'Update Password'
+              )}
             </button>
           </form>
 
@@ -596,20 +1020,14 @@ export function LoginPage({
               <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/90 text-left space-y-2.5">
                 <div className="flex items-center gap-2 text-xs font-semibold text-slate-900 dark:text-white">
                   <Database className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>PostgreSQL + Supabase Auth Ready</span>
+                  <span>Account &amp; Password Help</span>
                 </div>
                 <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                  New accounts and scrypt-hashed passwords are saved directly in PostgreSQL (`users` table). You can also connect any external Supabase Postgres instance via `DATABASE_URL`.
+                  Click <strong>Sign in with Google</strong> or <strong>Sign in with GitHub</strong>{' '}
+                  above to open the OAuth verification &amp; Privacy Policy consent window, or click{' '}
+                  <strong>Create Account</strong> to register with your Full Name, Email, and
+                  Password.
                 </p>
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => enterDemoScholarMode(true)}
-                    className="w-full py-2 px-3 rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950 text-[11px] font-semibold hover:opacity-90 transition-opacity cursor-pointer"
-                  >
-                    Instant Scholar Access (Claire Vance)
-                  </button>
-                </div>
               </div>
             )}
           </div>
@@ -652,13 +1070,11 @@ export function LoginPage({
 
           {/* Center 3x3 Interactive Node Network Diagram */}
           <div className="relative w-full max-w-[380px] aspect-square my-auto flex items-center justify-center">
-            {/* Dashed Geometric Connector Lines (Horizontal, Vertical, Diagonal, and Outer Perimeter) */}
             <svg
               className="absolute inset-0 w-full h-full pointer-events-none text-slate-300 dark:text-slate-700"
               viewBox="0 0 360 360"
               fill="none"
             >
-              {/* Outer square perimeter */}
               <rect
                 x="48"
                 y="48"
@@ -668,7 +1084,6 @@ export function LoginPage({
                 strokeWidth="1.2"
                 strokeDasharray="3 3"
               />
-              {/* Horizontal center line */}
               <line
                 x1="48"
                 y1="180"
@@ -678,7 +1093,6 @@ export function LoginPage({
                 strokeWidth="1.2"
                 strokeDasharray="3 3"
               />
-              {/* Vertical center line */}
               <line
                 x1="180"
                 y1="48"
@@ -688,7 +1102,6 @@ export function LoginPage({
                 strokeWidth="1.2"
                 strokeDasharray="3 3"
               />
-              {/* Diagonal top-left to bottom-right */}
               <line
                 x1="48"
                 y1="48"
@@ -698,7 +1111,6 @@ export function LoginPage({
                 strokeWidth="1.2"
                 strokeDasharray="3 3"
               />
-              {/* Diagonal bottom-left to top-right */}
               <line
                 x1="48"
                 y1="312"
@@ -712,7 +1124,6 @@ export function LoginPage({
 
             {/* 3x3 Node Matrix */}
             <div className="relative z-10 w-full h-full grid grid-cols-3 grid-rows-3 place-items-center">
-              {/* 1. Top-Left Node (White card with Blue Infinity/Loop Icon) */}
               <button
                 type="button"
                 onClick={() => setSelectedNodeId('curriculum')}
@@ -733,7 +1144,6 @@ export function LoginPage({
                 </svg>
               </button>
 
-              {/* 2. Top-Center Node (Black card with Stylized R Monogram) */}
               <button
                 type="button"
                 onClick={() => setSelectedNodeId('rubric')}
@@ -749,7 +1159,6 @@ export function LoginPage({
                 </span>
               </button>
 
-              {/* 3. Top-Right Node (White card with Crisp Typography Mark) */}
               <button
                 type="button"
                 onClick={() => setSelectedNodeId('timed-studio')}
@@ -767,7 +1176,6 @@ export function LoginPage({
                 </span>
               </button>
 
-              {/* 4. Middle-Left Node (Black card with Spiral/Vortex Glyph) */}
               <button
                 type="button"
                 onClick={() => setSelectedNodeId('adaptive')}
@@ -788,7 +1196,6 @@ export function LoginPage({
                 </svg>
               </button>
 
-              {/* 5. CENTER HUB (Large Glossy Dark Rounded-2xl EXAMORA Emblem) */}
               <button
                 type="button"
                 onClick={() => setSelectedNodeId('examora-hub')}
@@ -820,7 +1227,6 @@ export function LoginPage({
                 </div>
               </button>
 
-              {/* 6. Middle-Right Node (Black card with Geometric Prism Bars) */}
               <button
                 type="button"
                 onClick={() => setSelectedNodeId('sandbox')}
@@ -842,7 +1248,6 @@ export function LoginPage({
                 </svg>
               </button>
 
-              {/* 7. Bottom-Left Node (White card with Emerald AI Knot Icon) */}
               <button
                 type="button"
                 onClick={() => setSelectedNodeId('gemini')}
@@ -864,7 +1269,6 @@ export function LoginPage({
                 </svg>
               </button>
 
-              {/* 8. Bottom-Center Node (Black card with PostgreSQL/Supabase Cube Icon) */}
               <button
                 type="button"
                 onClick={() => setSelectedNodeId('database')}
@@ -891,7 +1295,6 @@ export function LoginPage({
                 </svg>
               </button>
 
-              {/* 9. Bottom-Right Node (White card with Dark Loop/Shield Glyph) */}
               <button
                 type="button"
                 onClick={() => setSelectedNodeId('privacy')}

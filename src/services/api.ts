@@ -9,43 +9,97 @@ import {
   TopicPerformanceMetric,
 } from '../types/examora.ts';
 
-// Clean, empty initial state (no fake results before taking an exam)
-let demoDocuments: StudyDocument[] = [];
-let demoExams: ExamConfig[] = [];
-const demoQuestionsByExam: Record<string, ExamQuestion[]> = {};
-let demoResults: ExamResultSummary[] = [];
-let demoTopicPerf: TopicPerformanceMetric[] = [];
+interface LocalUserWorkspace {
+  documents: StudyDocument[];
+  exams: ExamConfig[];
+  questionsByExam: Record<string, ExamQuestion[]>;
+  results: ExamResultSummary[];
+  topicPerf: TopicPerformanceMetric[];
+  attemptsStore: Record<
+    string,
+    {
+      attempt: ExamAttempt;
+      exam: ExamConfig;
+      questions: ExamQuestion[];
+      answers: Record<string, any>;
+      result?: ExamResultSummary;
+    }
+  >;
+  consents: ConsentRecord[];
+}
 
-const demoAttemptsStore: Record<
-  string,
-  {
-    attempt: ExamAttempt;
-    exam: ExamConfig;
-    questions: ExamQuestion[];
-    answers: Record<string, any>;
-    result?: ExamResultSummary;
+function getWorkspaceKey(token: string | null): string {
+  if (!token) return 'examora_workspace_guest_v1';
+  if (token.startsWith('scholar-session:')) {
+    const parts = token.split(':');
+    const uid = parts[1] || 'scholar';
+    return `examora_workspace_${uid}_v1`;
   }
-> = {};
+  return `examora_workspace_${token.slice(0, 24)}_v1`;
+}
+
+function loadWorkspace(token: string | null): LocalUserWorkspace {
+  const key = getWorkspaceKey(token);
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch {
+    // Ignore storage read errors
+  }
+  return {
+    documents: [],
+    exams: [],
+    questionsByExam: {},
+    results: [],
+    topicPerf: [],
+    attemptsStore: {},
+    consents: [],
+  };
+}
+
+function saveWorkspace(token: string | null, ws: LocalUserWorkspace) {
+  const key = getWorkspaceKey(token);
+  try {
+    localStorage.setItem(key, JSON.stringify(ws));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+async function tryFetchJson(url: string, init?: RequestInit): Promise<any | null> {
+  try {
+    const res = await fetch(url, init);
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok && contentType.includes('application/json')) {
+      return await res.json();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export async function fetchDashboardData(token: string | null): Promise<DashboardPayload> {
   if (token) {
-    const res = await fetch('/api/dashboard', {
+    const serverData = await tryFetchJson('/api/dashboard', {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) {
-      throw new Error('Failed to load dashboard data from server');
+    if (serverData && serverData.stats) {
+      return serverData;
     }
-    return await res.json();
   }
 
-  const totalExamsTaken = demoResults.length;
+  const ws = loadWorkspace(token);
+  const totalExamsTaken = ws.results.length;
   const averageScore =
     totalExamsTaken > 0
-      ? Number((demoResults.reduce((s, r) => s + r.percentage, 0) / totalExamsTaken).toFixed(1))
+      ? Number((ws.results.reduce((s, r) => s + r.percentage, 0) / totalExamsTaken).toFixed(1))
       : 0;
   const bestScore =
     totalExamsTaken > 0
-      ? Number(Math.max(...demoResults.map((r) => r.percentage)).toFixed(1))
+      ? Number(Math.max(...ws.results.map((r) => r.percentage)).toFixed(1))
       : 0;
 
   return {
@@ -53,13 +107,13 @@ export async function fetchDashboardData(token: string | null): Promise<Dashboar
       totalExamsTaken,
       averageScore,
       bestScore,
-      documentsCount: demoDocuments.length,
-      availableExamsCount: demoExams.length,
+      documentsCount: ws.documents.length,
+      availableExamsCount: ws.exams.length,
     },
-    documents: [...demoDocuments],
-    exams: [...demoExams],
-    recentResults: [...demoResults],
-    topicPerformance: [...demoTopicPerf],
+    documents: [...ws.documents],
+    exams: [...ws.exams],
+    recentResults: [...ws.results],
+    topicPerformance: [...ws.topicPerf],
     activeAttempts: [],
   };
 }
@@ -75,7 +129,7 @@ export async function uploadAndAnalyzeDocument(
   }
 ): Promise<{ document: StudyDocument }> {
   if (token) {
-    const res = await fetch('/api/documents', {
+    const serverData = await tryFetchJson('/api/documents', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -83,13 +137,12 @@ export async function uploadAndAnalyzeDocument(
       },
       body: JSON.stringify(payload),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'Document analysis failed');
+    if (serverData && serverData.document) {
+      return serverData;
     }
-    return data;
   }
 
+  const ws = loadWorkspace(token);
   const lines = payload.rawText
     .split(/\n+/)
     .map((l) => l.trim())
@@ -125,7 +178,8 @@ export async function uploadAndAnalyzeDocument(
     createdAt: new Date().toISOString(),
   };
 
-  demoDocuments = [newDoc, ...demoDocuments];
+  ws.documents = [newDoc, ...ws.documents];
+  saveWorkspace(token, ws);
   return { document: newDoc };
 }
 
@@ -147,7 +201,7 @@ export async function generateExamPaper(
   }
 ): Promise<{ exam: ExamConfig; questionsCount: number }> {
   if (token) {
-    const res = await fetch('/api/exams/generate', {
+    const serverData = await tryFetchJson('/api/exams/generate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -155,15 +209,14 @@ export async function generateExamPaper(
       },
       body: JSON.stringify(payload),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'Failed to generate AI examination');
+    if (serverData && serverData.exam) {
+      return serverData;
     }
-    return data;
   }
 
+  const ws = loadWorkspace(token);
   const examId = `exam-${Date.now()}`;
-  const count = Math.max(1, Math.min(10, payload.questionCount));
+  const count = Math.max(1, Math.min(20, payload.questionCount));
   const marksEach = Number((payload.totalMarks / count).toFixed(1));
 
   const newExam: ExamConfig = {
@@ -184,7 +237,7 @@ export async function generateExamPaper(
   };
 
   const generated: ExamQuestion[] = Array.from({ length: count }).map((_, idx) => {
-    const topic = payload.topicNames[idx % payload.topicNames.length] || payload.subject;
+    const topic = payload.topicNames[idx % Math.max(1, payload.topicNames.length)] || payload.subject;
     const types: Array<'MCQ' | 'Descriptive' | 'Coding' | 'Mathematics'> =
       payload.format === 'Mixed'
         ? ['MCQ', 'Mathematics', 'Descriptive', 'Coding']
@@ -284,8 +337,9 @@ export async function generateExamPaper(
     };
   });
 
-  demoExams = [newExam, ...demoExams];
-  demoQuestionsByExam[examId] = generated;
+  ws.exams = [newExam, ...ws.exams];
+  ws.questionsByExam[examId] = generated;
+  saveWorkspace(token, ws);
   return { exam: newExam, questionsCount: generated.length };
 }
 
@@ -299,7 +353,7 @@ export async function startExamSession(
   savedAnswers: any[];
 }> {
   if (token) {
-    const res = await fetch('/api/attempts/start', {
+    const serverData = await tryFetchJson('/api/attempts/start', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -307,22 +361,21 @@ export async function startExamSession(
       },
       body: JSON.stringify({ examId }),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'Failed to start examination');
+    if (serverData && serverData.attempt) {
+      return serverData;
     }
-    return data;
   }
 
-  const exam = demoExams.find((e) => e.id === examId);
+  const ws = loadWorkspace(token);
+  const exam = ws.exams.find((e) => e.id === examId);
   if (!exam) {
     throw new Error('Examination paper not found. Please generate an examination first.');
   }
-  const fullQuestions = demoQuestionsByExam[exam.id] || [];
+  const fullQuestions = ws.questionsByExam[exam.id] || [];
   const safeQuestions = fullQuestions.map(({ correctAnswer, explanation, ...rest }) => rest);
 
   const attemptId = `att-${exam.id}-${Date.now()}`;
-  demoAttemptsStore[attemptId] = {
+  ws.attemptsStore[attemptId] = {
     attempt: {
       id: attemptId,
       examId: exam.id,
@@ -337,7 +390,8 @@ export async function startExamSession(
     answers: {},
   };
 
-  const stored = demoAttemptsStore[attemptId];
+  saveWorkspace(token, ws);
+  const stored = ws.attemptsStore[attemptId];
   return {
     exam,
     attempt: stored.attempt,
@@ -362,7 +416,7 @@ export async function autoSaveAttempt(
   }
 ): Promise<void> {
   if (token) {
-    await fetch(`/api/attempts/${attemptId}/save`, {
+    const serverRes = await tryFetchJson(`/api/attempts/${attemptId}/save`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -370,10 +424,11 @@ export async function autoSaveAttempt(
       },
       body: JSON.stringify(payload),
     });
-    return;
+    if (serverRes) return;
   }
 
-  const stored = demoAttemptsStore[attemptId];
+  const ws = loadWorkspace(token);
+  const stored = ws.attemptsStore[attemptId];
   if (stored) {
     stored.attempt.timeRemainingSeconds = payload.timeRemainingSeconds;
     stored.attempt.currentQuestionIndex = payload.currentQuestionIndex;
@@ -386,6 +441,7 @@ export async function autoSaveAttempt(
         handwrittenImageData: payload.answer.handwrittenImageData,
       };
     }
+    saveWorkspace(token, ws);
   }
 }
 
@@ -404,7 +460,7 @@ export async function submitExamAttempt(
   }
 ): Promise<{ result: ExamResultSummary; attemptId: string }> {
   if (token) {
-    const res = await fetch(`/api/attempts/${attemptId}/submit`, {
+    const serverData = await tryFetchJson(`/api/attempts/${attemptId}/submit`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -412,14 +468,13 @@ export async function submitExamAttempt(
       },
       body: JSON.stringify(payload),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'Failed to evaluate examination');
+    if (serverData && serverData.result) {
+      return serverData;
     }
-    return data;
   }
 
-  const stored = demoAttemptsStore[attemptId];
+  const ws = loadWorkspace(token);
+  const stored = ws.attemptsStore[attemptId];
   if (!stored) {
     throw new Error('Examination session not found');
   }
@@ -483,7 +538,7 @@ export async function submitExamAttempt(
         questionId: q.id,
         answerText: ansText,
         codeLanguage: sub?.codeLanguage,
-        handwrittenImageData: sub?.handwrittenImageData,
+        handwrittenImageData: payload.ephemeralPhotoMode ? null : sub?.handwrittenImageData,
         isCorrect: ratio >= 0.85,
         awardedMarks: awarded,
         aiFeedback:
@@ -545,7 +600,47 @@ export async function submitExamAttempt(
 
   stored.attempt.status = 'evaluated';
   stored.result = summary;
-  demoResults = [summary, ...demoResults];
+  ws.results = [summary, ...ws.results];
+
+  // Update topic performance metrics
+  for (const t of exam.topicNames) {
+    const existingIdx = ws.topicPerf.findIndex((tp) => tp.topic === t && tp.subject === exam.subject);
+    const masteryLevel =
+      percentage >= 85
+        ? 'Mastered'
+        : percentage >= 70
+        ? 'Proficient'
+        : percentage >= 50
+        ? 'Developing'
+        : 'Needs Focus';
+    if (existingIdx >= 0) {
+      const curr = ws.topicPerf[existingIdx];
+      ws.topicPerf[existingIdx] = {
+        ...curr,
+        questionsAttempted: curr.questionsAttempted + 1,
+        questionsCorrect: curr.questionsCorrect + (percentage >= 70 ? 1 : 0),
+        accuracyPercentage: percentage,
+        averageScorePercentage: Number(((curr.averageScorePercentage + percentage) / 2).toFixed(1)),
+        masteryLevel,
+        lastTestedAt: new Date().toISOString(),
+      };
+    } else {
+      ws.topicPerf.push({
+        id: `tp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        subject: exam.subject,
+        topic: t,
+        questionsAttempted: 1,
+        questionsCorrect: percentage >= 70 ? 1 : 0,
+        accuracyPercentage: percentage,
+        averageScorePercentage: percentage,
+        masteryLevel,
+        recommendedDifficulty: percentage >= 80 ? 'Hard' : 'Medium',
+        lastTestedAt: new Date().toISOString(),
+      });
+    }
+  }
+
+  saveWorkspace(token, ws);
   return { result: summary, attemptId };
 }
 
@@ -559,17 +654,16 @@ export async function fetchResultReport(
   answers: any[];
 }> {
   if (token) {
-    const res = await fetch(`/api/results/${attemptId}`, {
+    const serverData = await tryFetchJson(`/api/results/${attemptId}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'Failed to fetch evaluation report');
+    if (serverData && serverData.result) {
+      return serverData;
     }
-    return data;
   }
 
-  const stored = demoAttemptsStore[attemptId];
+  const ws = loadWorkspace(token);
+  const stored = ws.attemptsStore[attemptId];
   if (!stored || !stored.result) {
     throw new Error('Evaluation report not found. Complete an examination first.');
   }
@@ -582,29 +676,44 @@ export async function fetchResultReport(
   };
 }
 
-let demoConsents: ConsentRecord[] = [];
-
 export async function fetchUserConsents(token: string | null): Promise<ConsentRecord[]> {
   if (token) {
-    const res = await fetch('/api/privacy/consents', {
+    const serverData = await tryFetchJson('/api/privacy/consents', {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (res.ok) {
-      const data = await res.json();
-      return data.consents || [];
+    if (serverData && Array.isArray(serverData.consents)) {
+      return serverData.consents;
     }
   }
-  return demoConsents;
+  const ws = loadWorkspace(token);
+  return ws.consents;
+}
+
+function getUidFromToken(token: string | null): string {
+  if (token && token.startsWith('scholar-session:')) {
+    const parts = token.split(':');
+    if (parts[1]) return parts[1];
+  }
+  try {
+    const activeRaw = localStorage.getItem('examora_active_user_v1');
+    if (activeRaw) {
+      const parsed = JSON.parse(activeRaw);
+      if (parsed?.profile?.uid) return parsed.profile.uid;
+    }
+  } catch {
+    // Ignore storage read errors
+  }
+  return 'scholar-user';
 }
 
 export async function submitUserConsent(
   token: string | null,
   consentGiven: boolean,
   consentTextVersion = 'DPDP-2023-v1.0',
-  consentText = 'I agree to the Privacy Policy and consent to my data (name, email, uploaded photos) being used to provide plant diagnosis and AI examination evaluation.'
+  consentText = 'I agree to the Privacy Policy and consent to my data (name, email, uploaded photos) being used to provide plant diagnosis.'
 ): Promise<ConsentRecord> {
   if (token) {
-    const res = await fetch('/api/privacy/consent', {
+    const serverData = await tryFetchJson('/api/privacy/consent', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -612,73 +721,92 @@ export async function submitUserConsent(
       },
       body: JSON.stringify({ consentGiven, consentTextVersion, consentText }),
     });
-    if (res.ok) {
-      const data = await res.json();
-      return data.consent;
+    if (serverData && serverData.consent) {
+      return serverData.consent;
     }
   }
+  const ws = loadWorkspace(token);
   const fallbackRecord: ConsentRecord = {
     id: `consent-${Date.now()}`,
-    userId: 'scholar-user',
+    userId: getUidFromToken(token),
     consentGiven,
     consentTextVersion,
     consentText,
     timestamp: new Date().toISOString(),
   };
-  demoConsents = [fallbackRecord, ...demoConsents];
+  ws.consents = [fallbackRecord, ...ws.consents];
+  saveWorkspace(token, ws);
   return fallbackRecord;
 }
 
 export async function deleteStudyDocument(token: string | null, documentId: string): Promise<void> {
   if (token) {
-    const res = await fetch(`/api/documents/${documentId}`, {
+    const serverRes = await tryFetchJson(`/api/documents/${documentId}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) {
-      throw new Error('Failed to delete study material');
-    }
-    return;
+    if (serverRes) return;
   }
-  demoDocuments = demoDocuments.filter((d) => d.id !== documentId);
+  const ws = loadWorkspace(token);
+  ws.documents = ws.documents.filter((d) => d.id !== documentId);
+  saveWorkspace(token, ws);
 }
 
 export async function downloadPersonalDataExport(token: string | null): Promise<any> {
   if (token) {
-    const res = await fetch('/api/privacy/export', {
+    const serverData = await tryFetchJson('/api/privacy/export', {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (res.ok) {
-      return await res.json();
+    if (serverData && serverData.exportMetadata) {
+      return serverData;
     }
   }
+  const ws = loadWorkspace(token);
+  let accountInfo: any = { uid: getUidFromToken(token) };
+  try {
+    const activeRaw = localStorage.getItem('examora_active_user_v1');
+    if (activeRaw) {
+      const parsed = JSON.parse(activeRaw);
+      if (parsed?.profile) {
+        accountInfo = parsed.profile;
+      }
+    }
+  } catch {
+    // Ignore storage read errors
+  }
+
   return {
     exportMetadata: {
       standard: 'Digital Personal Data Protection (DPDP) Act 2023 — Right to Access & Data Portability',
       exportedAt: new Date().toISOString(),
+      userId: accountInfo.uid || 'scholar-user',
     },
-    consents: demoConsents,
-    plants: demoDocuments,
-    documents: demoDocuments,
-    examinations: demoExams,
-    evaluationResults: demoResults,
+    account: accountInfo,
+    consents: ws.consents,
+    plants: ws.documents.map((d) => ({
+      id: d.id,
+      title: d.title,
+      subject: d.subject,
+      fileName: d.fileName,
+      createdAt: d.createdAt,
+    })),
+    documents: ws.documents,
+    examinations: ws.exams,
+    evaluationResults: ws.results,
   };
 }
 
 export async function deleteAccountAndData(token: string | null): Promise<void> {
   if (token) {
-    const res = await fetch('/api/privacy/account', {
+    await tryFetchJson('/api/privacy/account', {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) {
-      throw new Error('Failed to delete account data');
-    }
   }
-  demoDocuments = [];
-  demoExams = [];
-  demoResults = [];
-  demoTopicPerf = [];
-  demoConsents = [];
+  const key = getWorkspaceKey(token);
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore storage errors
+  }
 }
-

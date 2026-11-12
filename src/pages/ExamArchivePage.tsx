@@ -16,9 +16,15 @@ import {
 } from '../types/examora.ts';
 import { Button } from '../components/ui/Button.tsx';
 import { Card, CardContent, CardHeader } from '../components/ui/Card.tsx';
+import { PageSkeleton } from '../components/feedback/LoadingSystem.tsx';
+import { FullPageError } from '../components/feedback/ErrorSystem.tsx';
+import { mapErrorToUserMessage } from '../utils/errorHandler.ts';
 
 interface ExamArchivePageProps {
   data: DashboardPayload | null;
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   onNavigate: (view: AppView) => void;
   onStartExam: (examId: string) => void;
   onViewResult: (attemptId: string) => void;
@@ -63,6 +69,9 @@ const REFERENCE_SYLLABUS_BANK: Array<{
 
 export function ExamArchivePage({
   data,
+  loading = false,
+  error = null,
+  onRetry,
   onNavigate,
   onStartExam,
   onViewResult,
@@ -109,6 +118,22 @@ export function ExamArchivePage({
     );
     return [...fromDocs, ...REFERENCE_SYLLABUS_BANK];
   }, [documents]);
+
+  if (loading && !data) {
+    return <PageSkeleton variant="archive" />;
+  }
+
+  if (error && !data) {
+    const friendly = mapErrorToUserMessage(error, 'dashboard');
+    return (
+      <FullPageError
+        title={friendly.title}
+        message={friendly.message}
+        onRetry={onRetry}
+        onBackToDashboard={() => onNavigate('dashboard')}
+      />
+    );
+  }
 
   return (
     <div className="space-y-8">

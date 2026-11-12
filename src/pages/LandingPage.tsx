@@ -4,7 +4,6 @@ import {
   FileText,
   LineChart,
   Moon,
-  ShieldCheck,
   Sliders,
   Sun,
   Timer,
@@ -13,7 +12,6 @@ import { useAuth } from '../context/AuthContext.tsx';
 import { Button } from '../components/ui/Button.tsx';
 import heroStudyDeskImg from '../assets/images/hero_examora_study_desk_1794064388130.jpg';
 import diagramCalculusImg from '../assets/images/diagram_calculus_evaluation_1794064388575.jpg';
-import avatarScholarImg from '../assets/images/avatar_student_scholar_1794064387086.jpg';
 
 interface LandingPageProps {
   onOpenPrivacyPolicy: () => void;
@@ -21,57 +19,11 @@ interface LandingPageProps {
 }
 
 export function LandingPage({ onOpenPrivacyPolicy, onOpenLogin }: LandingPageProps) {
-  const { signInWithGoogle, signInWithCredentials, enterDemoScholarMode, authError, theme, toggleTheme } =
-    useAuth();
-
-  // Data Minimization: Only Full Name and Email collected at signup (never phone number, address, etc.)
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  // Mandatory, unchecked (not pre-ticked) DPDP Act 2023 consent checkbox
-  const [consentChecked, setConsentChecked] = useState(false);
-  const [consentError, setConsentError] = useState<string | null>(null);
+  const { theme, toggleTheme } = useAuth();
 
   const [selectedModeTab, setSelectedModeTab] = useState<
     'MCQ' | 'Descriptive' | 'Coding' | 'Mathematics' | 'Mixed'
   >('Mathematics');
-
-  const handleSignupSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!consentChecked) {
-      setConsentError(
-        'Consent Required: Please tick the Privacy Policy & DPDP Act 2023 consent checkbox before creating an account.'
-      );
-      return;
-    }
-    if (!fullName.trim() || !email.trim()) {
-      setConsentError('Please enter your Full Name and Email address.');
-      return;
-    }
-    setConsentError(null);
-    await signInWithCredentials(email.trim(), fullName.trim(), true);
-  };
-
-  const handleGoogleSignIn = async () => {
-    if (!consentChecked) {
-      setConsentError(
-        'Consent Required: Please tick the Privacy Policy & DPDP Act 2023 consent checkbox before creating or signing into an account.'
-      );
-      return;
-    }
-    setConsentError(null);
-    await signInWithGoogle(true);
-  };
-
-  const handleInstantScholarWorkspace = () => {
-    if (!consentChecked) {
-      setConsentError(
-        'Consent Required: Please tick the Privacy Policy & DPDP Act 2023 consent checkbox before launching the workspace.'
-      );
-      return;
-    }
-    setConsentError(null);
-    enterDemoScholarMode(true);
-  };
 
   const modeDetails = {
     MCQ: {
@@ -163,9 +115,10 @@ export function LandingPage({ onOpenPrivacyPolicy, onOpenLogin }: LandingPagePro
           <button
             type="button"
             onClick={onOpenLogin}
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
-            Sign In
+            <span>Get Started</span>
+            <ArrowRight className="w-4 h-4" />
           </button>
         </div>
       </header>
@@ -174,8 +127,8 @@ export function LandingPage({ onOpenPrivacyPolicy, onOpenLogin }: LandingPagePro
         {/* Hero Section: 2-Column Split with items-stretch */}
         <section className="max-w-[1280px] mx-auto px-6 lg:px-12 pt-10 pb-16">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-stretch">
-            {/* Left Column: Core Value Proposition & DPDP-Aligned Signup Form */}
-            <div className="lg:col-span-7 flex flex-col justify-between py-1">
+            {/* Left Column: Core Value Proposition & Get Started Action */}
+            <div className="lg:col-span-7 flex flex-col justify-between py-2">
               <div className="space-y-6">
                 <div className="flex items-center justify-between gap-4">
                   <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -214,110 +167,18 @@ export function LandingPage({ onOpenPrivacyPolicy, onOpenLogin }: LandingPagePro
                   modes with transparent rubric evaluation.
                 </p>
 
-                {/* DPDP Act 2023 Aligned Signup & Consent Card (Data Minimization: Only Full Name & Email) */}
-                <form
-                  id="signup-form"
-                  onSubmit={handleSignupSubmit}
-                  className="p-5 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-4"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                        Create Scholar Account / Sign In
-                      </h2>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Data Minimization: Only Full Name and Email are required (no phone or address collected).
-                      </p>
-                    </div>
-                    <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                        Full Name *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        placeholder="e.g., Claire Vance"
-                        className="w-full px-3.5 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-400"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                        Email Address *
-                      </label>
-                      <input
-                        type="email"
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="e.g., claire.vance@university.edu"
-                        className="w-full px-3.5 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-slate-400"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Mandatory, Unchecked by default DPDP Consent Checkbox */}
-                  <div className="p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/60">
-                    <label className="flex items-start gap-3 cursor-pointer text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                      <input
-                        type="checkbox"
-                        checked={consentChecked}
-                        onChange={(e) => {
-                          setConsentChecked(e.target.checked);
-                          if (e.target.checked) setConsentError(null);
-                        }}
-                        className="mt-0.5 w-4 h-4 rounded accent-slate-900 dark:accent-slate-100 shrink-0 cursor-pointer"
-                      />
-                      <span>
-                        I agree to the{' '}
-                        <a
-                          href="/privacy-policy"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            window.history.pushState({}, '', '/privacy-policy');
-                            onOpenPrivacyPolicy();
-                          }}
-                          className="font-semibold underline text-slate-900 dark:text-white hover:opacity-80"
-                        >
-                          Privacy Policy
-                        </a>{' '}
-                        and consent to my data (name, email, uploaded photos) being used to provide plant diagnosis and AI examination evaluation.
-                      </span>
-                    </label>
-                  </div>
-
-                  {(consentError || authError) && (
-                    <div className="p-3 rounded-lg border border-red-300 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-xs text-red-800 dark:text-red-300 font-medium">
-                      {consentError || authError}
-                    </div>
-                  )}
-
-                  <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                    <Button type="submit" disabled={!consentChecked}>
-                      <span>Create Account</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={onOpenLogin}
-                    >
-                      <span>Sign In with Password</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleGoogleSignIn}
-                    >
-                      <span>Google Sign-In</span>
-                    </Button>
-                  </div>
-                </form>
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  <Button size="lg" onClick={onOpenLogin}>
+                    <span>Get Started</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                  <a
+                    href="#modes"
+                    className="px-4 py-2.5 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-800 bg-white hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors"
+                  >
+                    Explore Exam Modes
+                  </a>
+                </div>
               </div>
 
               <div className="pt-8 mt-8 border-t border-slate-200 dark:border-slate-800 grid grid-cols-3 gap-6">
@@ -504,12 +365,13 @@ export function LandingPage({ onOpenPrivacyPolicy, onOpenLogin }: LandingPagePro
                     <strong className="text-slate-900 dark:text-white">Evaluation Outcome:</strong>{' '}
                     {modeDetails[selectedModeTab].outcome}
                   </p>
-                  <a
-                    href="#signup-form"
-                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950"
+                  <button
+                    type="button"
+                    onClick={onOpenLogin}
+                    className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-950 cursor-pointer"
                   >
-                    Try {selectedModeTab} Mode
-                  </a>
+                    Get Started with {selectedModeTab} Mode
+                  </button>
                 </div>
               </div>
 
@@ -572,20 +434,12 @@ export function LandingPage({ onOpenPrivacyPolicy, onOpenLogin }: LandingPagePro
                 my midterm score from 68% to 91% in three weeks.”
               </p>
               <div className="flex items-center justify-between gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <div className="flex items-center gap-3">
-                  <img
-                    src={avatarScholarImg}
-                    alt="Claire Vance"
-                    referrerPolicy="no-referrer"
-                    className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700"
-                  />
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                      Claire Vance
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      B.Sc. Mathematics & Computer Science · Year 3 Honors Scholar
-                    </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                    University Honors Cohort
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    B.Sc. Mathematics &amp; Computer Science · Year 3 Assessment Study
                   </div>
                 </div>
                 <div className="text-right font-mono tabular-nums">

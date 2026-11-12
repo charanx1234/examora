@@ -14,6 +14,9 @@ import {
 } from '../types/examora.ts';
 import { Button } from '../components/ui/Button.tsx';
 import { Card, CardContent, CardHeader } from '../components/ui/Card.tsx';
+import { PageSkeleton } from '../components/feedback/LoadingSystem.tsx';
+import { FullPageError } from '../components/feedback/ErrorSystem.tsx';
+import { mapErrorToUserMessage } from '../utils/errorHandler.ts';
 
 interface ExamResultPageProps {
   report: {
@@ -33,6 +36,8 @@ interface ExamResultPageProps {
     }>;
   } | null;
   loading: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   onBackToDashboard: () => void;
   onRetakeExam: (examId: string) => void;
   onGenerateAdaptiveFromMistakes: (subject: string, weakTopics: string[]) => void;
@@ -41,16 +46,30 @@ interface ExamResultPageProps {
 export function ExamResultPage({
   report,
   loading,
+  error,
+  onRetry,
   onBackToDashboard,
   onRetakeExam,
   onGenerateAdaptiveFromMistakes,
 }: ExamResultPageProps) {
-  if (loading || !report) {
+  if (loading) {
+    return <PageSkeleton variant="results" />;
+  }
+
+  if (error || !report) {
+    const friendly = mapErrorToUserMessage(
+      error || "We couldn't retrieve your examination results right now.",
+      'result_load'
+    );
     return (
-      <div className="space-y-6">
-        <div className="h-32 rounded-xl bg-slate-200/70 dark:bg-slate-800/50 animate-pulse" />
-        <div className="h-64 rounded-xl bg-slate-200/70 dark:bg-slate-800/50 animate-pulse" />
-      </div>
+      <FullPageError
+        title={friendly.title}
+        message={friendly.message}
+        retryLabel={friendly.actionLabel || 'Retry Loading Results'}
+        isNetworkError={friendly.isNetworkError}
+        onRetry={onRetry}
+        onBackToDashboard={onBackToDashboard}
+      />
     );
   }
 

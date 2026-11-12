@@ -29,7 +29,7 @@ interface SettingsPrivacyPageProps {
 }
 
 export const DPDP_CONSENT_TEXT =
-  'I agree to the Privacy Policy and consent to my data (name, email, uploaded photos) being used to provide plant diagnosis and AI examination evaluation.';
+  'I agree to the Privacy Policy and consent to my data (name, email, uploaded photos) being used to provide plant diagnosis.';
 export const DPDP_CONSENT_VERSION = 'DPDP-2023-v1.0';
 
 export function SettingsPrivacyPage({

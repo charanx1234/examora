@@ -7,14 +7,13 @@ import {
   GraduationCap,
   Loader2,
   Mail,
-  RotateCcw,
   Save,
   ShieldCheck,
+  Trash2,
   User as UserIcon,
 } from 'lucide-react';
 import { AppView } from '../types/examora.ts';
 import { useAuth } from '../context/AuthContext.tsx';
-import { generateEmailDefaultAvatar, getUserAvatarUrl } from '../utils/avatar.ts';
 import { Button } from '../components/ui/Button.tsx';
 import { Card, CardContent, CardHeader } from '../components/ui/Card.tsx';
 
@@ -105,7 +104,6 @@ export function PersonalProfilePage({ onNavigate }: PersonalProfilePageProps) {
         canvas.height = size;
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          // Center-crop square
           const minSide = Math.min(img.width, img.height);
           const sx = (img.width - minSide) / 2;
           const sy = (img.height - minSide) / 2;
@@ -119,13 +117,6 @@ export function PersonalProfilePage({ onNavigate }: PersonalProfilePageProps) {
       }
     };
     reader.readAsDataURL(file);
-  };
-
-  const handleResetToDefaultEmailAvatar = () => {
-    setAvatarUrl(null);
-    setStatusMsg(
-      'Reset to your default email profile avatar. Click "Save Personal Information" to persist.'
-    );
   };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -160,16 +151,10 @@ export function PersonalProfilePage({ onNavigate }: PersonalProfilePageProps) {
       return;
     }
 
-    setStatusMsg('Your personal information and profile photo have been saved to PostgreSQL.');
+    setStatusMsg('Your personal information has been saved.');
   };
 
-  const previewAvatar = getUserAvatarUrl({
-    avatarUrl,
-    email: profile?.email,
-    fullName: fullName || profile?.fullName,
-  });
-
-  const isUsingEmailDefault = !avatarUrl || avatarUrl.trim().length === 0;
+  const hasCustomPhoto = Boolean(avatarUrl && avatarUrl.trim().length > 0);
 
   return (
     <div className="space-y-8">
@@ -177,13 +162,13 @@ export function PersonalProfilePage({ onNavigate }: PersonalProfilePageProps) {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800">
         <div className="space-y-1">
           <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-            Scholar Identity · Profile Photo, Personal Details & Academic Calibration
+            Scholar Identity · Personal Details & Academic Calibration
           </p>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
             Personal Information & Profile
           </h1>
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            Update your name, profile photo, age, date of birth, and academic details at any time. If no custom photo is set, your default email avatar is used automatically.
+            View and update your name, age, date of birth, and academic details.
           </p>
         </div>
 
@@ -207,50 +192,28 @@ export function PersonalProfilePage({ onNavigate }: PersonalProfilePageProps) {
       )}
 
       <form onSubmit={handleSaveProfile} className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left Column: Profile Picture Studio & Identity Summary */}
+        {/* Left Column: Optional Profile Photo & Identity Summary */}
         <div className="lg:col-span-4 space-y-6">
           <Card>
             <CardHeader>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Profile Picture
+                Profile Photo (Optional)
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {isUsingEmailDefault
-                  ? 'Currently using your default email profile avatar'
-                  : 'Custom profile photo active'}
+                {hasCustomPhoto ? 'Custom photo uploaded' : 'No profile photo set'}
               </p>
             </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="flex flex-col items-center text-center space-y-3">
-                <div className="relative group">
+            <CardContent className="space-y-4">
+              {hasCustomPhoto && (
+                <div className="flex flex-col items-center text-center">
                   <img
-                    src={previewAvatar}
+                    src={avatarUrl!}
                     alt={fullName || 'Scholar'}
                     referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      e.currentTarget.src = generateEmailDefaultAvatar(profile?.email, fullName);
-                    }}
-                    className="w-28 h-28 rounded-full object-cover border-2 border-slate-200 dark:border-slate-700 shadow-sm"
+                    className="w-24 h-24 rounded-full object-cover border border-slate-200 dark:border-slate-700"
                   />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="absolute bottom-0 right-0 p-2 rounded-full bg-slate-900 text-white dark:bg-white dark:text-slate-950 shadow-md hover:scale-105 transition-transform cursor-pointer"
-                    title="Upload new profile photo"
-                  >
-                    <Camera className="w-4 h-4" />
-                  </button>
                 </div>
-
-                <div>
-                  <div className="text-base font-bold text-slate-900 dark:text-white">
-                    {fullName || 'Scholar'}
-                  </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                    {profile?.email}
-                  </div>
-                </div>
-              </div>
+              )}
 
               <input
                 ref={fileInputRef}
@@ -260,7 +223,7 @@ export function PersonalProfilePage({ onNavigate }: PersonalProfilePageProps) {
                 className="hidden"
               />
 
-              <div className="space-y-2 pt-2">
+              <div className="space-y-2">
                 <Button
                   type="button"
                   variant="secondary"
@@ -268,25 +231,21 @@ export function PersonalProfilePage({ onNavigate }: PersonalProfilePageProps) {
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <Camera className="w-3.5 h-3.5" />
-                  <span>Upload Custom Photo</span>
+                  <span>{hasCustomPhoto ? 'Change Photo' : 'Add Photo (Optional)'}</span>
                 </Button>
 
-                {!isUsingEmailDefault && (
+                {hasCustomPhoto && (
                   <Button
                     type="button"
                     variant="outline"
                     className="w-full"
-                    onClick={handleResetToDefaultEmailAvatar}
+                    onClick={() => setAvatarUrl(null)}
                   >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Use Default Email Avatar</span>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Remove Photo</span>
                   </Button>
                 )}
               </div>
-
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed text-center">
-                If you do not upload a photo, EXAMORA automatically generates a clean default avatar from your email initials.
-              </p>
             </CardContent>
           </Card>
 

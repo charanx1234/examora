@@ -91,6 +91,7 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
   res.setHeader('X-DNS-Prefetch-Control', 'off');
   res.setHeader('X-Download-Options', 'noopen');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
   res.setHeader(
     'Permissions-Policy',
     'camera=(), microphone=(), geolocation=(), payment=(), usb=()'
@@ -99,14 +100,15 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://*.firebaseapp.com",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://*.googleapis.com https://*.firebaseapp.com https://*.gstatic.com https://www.gstatic.com https://accounts.google.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: blob: https:",
-      "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com wss:",
+      "frame-src 'self' https://*.firebaseapp.com https://*.web.app https://accounts.google.com https://apis.google.com https://*.google.com https://github.com",
+      "connect-src 'self' https://*.googleapis.com https://*.google.com https://*.gstatic.com https://*.firebaseio.com https://*.firebaseapp.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com https://github.com https://api.github.com wss: ws:",
       "object-src 'none'",
       "base-uri 'self'",
-      "form-action 'self'",
+      "form-action 'self' https://accounts.google.com https://github.com https://*.firebaseapp.com",
     ].join('; ')
   );
 

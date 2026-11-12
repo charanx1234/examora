@@ -174,7 +174,7 @@ async function startServer() {
       const uid = req.user!.uid;
       const email = req.user!.email || 'scholar@examora.edu';
       const fullName = req.body.fullName || req.user!.name || email.split('@')[0];
-      const avatarUrl = req.body.avatarUrl || req.user!.picture || undefined;
+      const avatarUrl = req.body.avatarUrl || undefined;
 
       const user = await getOrCreateUser(uid, email, fullName, avatarUrl);
       if (typeof req.body.consentGiven === 'boolean') {
@@ -259,7 +259,7 @@ async function startServer() {
     try {
       const uid = req.user!.uid;
       const email = req.user!.email || 'scholar@examora.edu';
-      await getOrCreateUser(uid, email, req.user!.name, req.user!.picture);
+      await getOrCreateUser(uid, email, req.user!.name);
       const dashboardData = await getStudentDashboardData(uid);
       res.json(dashboardData);
     } catch (error: any) {
@@ -709,14 +709,14 @@ async function startServer() {
     try {
       const uid = req.user!.uid;
       const email = req.user!.email || 'scholar@examora.edu';
-      await getOrCreateUser(uid, email, req.user!.name, req.user!.picture);
+      await getOrCreateUser(uid, email, req.user!.name);
       const { consentGiven, consentTextVersion, consentText } = req.body;
       const record = await recordUserConsent(
         uid,
         Boolean(consentGiven),
         consentTextVersion || 'DPDP-2023-v1.0',
         consentText ||
-          'I agree to the Privacy Policy and consent to my data (name, email, uploaded photos) being used to provide plant diagnosis and AI examination evaluation.'
+          'I agree to the Privacy Policy and consent to my data (name, email, uploaded photos) being used to provide plant diagnosis.'
       );
       res.status(201).json({ consent: record });
     } catch (error: any) {

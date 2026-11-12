@@ -11,6 +11,9 @@ import {
 import { StudyDocument } from '../types/examora.ts';
 import { Button } from '../components/ui/Button.tsx';
 import { Card, CardContent, CardHeader } from '../components/ui/Card.tsx';
+import { ButtonLoader } from '../components/feedback/LoadingSystem.tsx';
+import { ErrorMessage } from '../components/feedback/ErrorSystem.tsx';
+import { mapErrorToUserMessage } from '../utils/errorHandler.ts';
 
 interface DocumentsPageProps {
   documents: StudyDocument[];
@@ -71,13 +74,21 @@ export function DocumentsPage({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const ext = file.name.split('.').pop()?.toUpperCase() || '';
+    const supportedExts = ['PDF', 'DOCX', 'DOC', 'PPT', 'PPTX', 'MD', 'TXT'];
+    if (!supportedExts.includes(ext)) {
+      const mapped = mapErrorToUserMessage('unsupported file format', 'document_upload');
+      setError(mapped.message);
+      return;
+    }
+
     if (file.size > 10 * 1024 * 1024) {
-      setError('File size exceeds the 10 MB limit.');
+      const mapped = mapErrorToUserMessage('file size exceeds limit', 'document_upload');
+      setError(mapped.message);
       return;
     }
 
     setError(null);
-    const ext = file.name.split('.').pop()?.toUpperCase() || 'TXT';
     setFileName(file.name);
     setFileType(['PDF', 'DOCX', 'PPT', 'PPTX', 'MD', 'TXT'].includes(ext) ? ext : 'TXT');
     setFileSize(file.size);
@@ -96,8 +107,9 @@ export function DocumentsPage({
           `Uploaded Study Material: ${file.name}\nChapter 1: Core Definitions and Principles\nChapter 2: Theoretical Derivations and Proofs\nChapter 3: Applied Problem Sets and Case Studies`
         );
       }
-    } catch {
-      setError('Unable to read file contents.');
+    } catch (err: unknown) {
+      const mapped = mapErrorToUserMessage(err, 'document_process');
+      setError(mapped.message);
     }
   };
 
@@ -131,8 +143,9 @@ export function DocumentsPage({
       setTitle('');
       setFileName('');
       setRawText('');
-    } catch (err: any) {
-      setError(err.message || 'Failed to analyze document.');
+    } catch (err: unknown) {
+      const mapped = mapErrorToUserMessage(err, 'document_upload');
+      setError(mapped.message);
     } finally {
       setAnalyzing(false);
     }
@@ -253,15 +266,16 @@ export function DocumentsPage({
               </div>
 
               {error && (
-                <p className="text-xs text-red-600 dark:text-red-400 font-medium">{error}</p>
+                <ErrorMessage
+                  title="Document Processing Notice"
+                  message={error}
+                  onDismiss={() => setError(null)}
+                />
               )}
 
               <Button type="submit" disabled={analyzing} className="w-full">
                 {analyzing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Extracting Chapters & Subtopics...</span>
-                  </>
+                  <ButtonLoader label="Extracting Chapters & Subtopics..." size="sm" />
                 ) : (
                   <>
                     <BookOpen className="w-4 h-4" />

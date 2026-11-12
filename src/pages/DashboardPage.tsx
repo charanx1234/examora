@@ -26,11 +26,15 @@ import {
 import { useAuth } from '../context/AuthContext.tsx';
 import { Button } from '../components/ui/Button.tsx';
 import { Card, CardContent, CardHeader } from '../components/ui/Card.tsx';
+import { PageSkeleton } from '../components/feedback/LoadingSystem.tsx';
+import { FullPageError } from '../components/feedback/ErrorSystem.tsx';
+import { mapErrorToUserMessage } from '../utils/errorHandler.ts';
 
 interface DashboardPageProps {
   data: DashboardPayload | null;
   loading: boolean;
   error: string | null;
+  onRetry?: () => void;
   onNavigate: (view: AppView) => void;
   onStartExam: (examId: string) => void;
   onViewResult: (attemptId: string) => void;
@@ -41,6 +45,7 @@ export function DashboardPage({
   data,
   loading,
   error,
+  onRetry,
   onNavigate,
   onStartExam,
   onViewResult,
@@ -48,35 +53,20 @@ export function DashboardPage({
 }: DashboardPageProps) {
   const { profile } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="h-24 rounded-xl bg-slate-200/70 dark:bg-slate-800/50 animate-pulse" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((n) => (
-            <div
-              key={n}
-              className="h-28 rounded-xl bg-slate-200/70 dark:bg-slate-800/50 animate-pulse"
-            />
-          ))}
-        </div>
-        <div className="h-80 rounded-xl bg-slate-200/70 dark:bg-slate-800/50 animate-pulse" />
-      </div>
-    );
+  if (loading && !data) {
+    return <PageSkeleton variant="dashboard" />;
   }
 
   if (error || !data) {
+    const friendly = mapErrorToUserMessage(error || 'Failed to load dashboard', 'dashboard');
     return (
-      <Card>
-        <CardContent className="py-12 text-center space-y-4">
-          <p className="text-sm text-red-600 dark:text-red-400 font-medium">
-            {error || 'Unable to load dashboard telemetry.'}
-          </p>
-          <Button onClick={() => window.location.reload()} size="sm">
-            Retry Connection
-          </Button>
-        </CardContent>
-      </Card>
+      <FullPageError
+        title={friendly.title}
+        message={friendly.message}
+        retryLabel={friendly.actionLabel || 'Retry Connection'}
+        isNetworkError={friendly.isNetworkError}
+        onRetry={onRetry || (() => window.location.reload())}
+      />
     );
   }
 

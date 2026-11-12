@@ -19,22 +19,42 @@ import {
 } from '../types/examora.ts';
 import { Button } from '../components/ui/Button.tsx';
 import { Card, CardContent, CardHeader } from '../components/ui/Card.tsx';
+import { PageSkeleton } from '../components/feedback/LoadingSystem.tsx';
+import { FullPageError } from '../components/feedback/ErrorSystem.tsx';
+import { mapErrorToUserMessage } from '../utils/errorHandler.ts';
 
 interface AnalyticsPageProps {
   data: DashboardPayload | null;
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   onViewResult: (attemptId: string) => void;
   onTriggerAdaptiveExam: (subject: string, topics: string[], difficulty: 'Easy' | 'Medium' | 'Hard' | 'Expert') => void;
 }
 
 export function AnalyticsPage({
   data,
+  loading = false,
+  error = null,
+  onRetry,
   onViewResult,
   onTriggerAdaptiveExam,
 }: AnalyticsPageProps) {
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('ALL');
 
-  if (!data) {
-    return null;
+  if (loading && !data) {
+    return <PageSkeleton variant="analytics" />;
+  }
+
+  if (error || !data) {
+    const friendly = mapErrorToUserMessage(error || 'Failed to load analytics', 'dashboard');
+    return (
+      <FullPageError
+        title={friendly.title}
+        message={friendly.message}
+        onRetry={onRetry}
+      />
+    );
   }
 
   const { topicPerformance, recentResults } = data;

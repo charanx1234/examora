@@ -36,15 +36,52 @@ import { ExamArchivePage } from './pages/ExamArchivePage.tsx';
 import { PersonalProfilePage } from './pages/PersonalProfilePage.tsx';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage.tsx';
 import { SettingsPrivacyPage } from './pages/SettingsPrivacyPage.tsx';
+import { NotFoundPage } from './pages/NotFoundPage.tsx';
+import { GlobalLoader } from './components/feedback/LoadingSystem.tsx';
+import { ErrorToastProvider, useToast } from './components/feedback/ErrorSystem.tsx';
+import { AppErrorBoundary } from './components/feedback/AppErrorBoundary.tsx';
+import { mapErrorToUserMessage } from './utils/errorHandler.ts';
+
+const KNOWN_PATHS: Record<string, AppView | 'landing' | 'login'> = {
+  '/': 'landing',
+  '/login': 'login',
+  '/privacy-policy': 'privacy-policy',
+  '/dashboard': 'dashboard',
+  '/documents': 'documents',
+  '/create-exam': 'create-exam',
+  '/exam-player': 'exam-player',
+  '/exam-result': 'exam-result',
+  '/adaptive': 'adaptive',
+  '/analytics': 'analytics',
+  '/profile': 'profile',
+  '/settings': 'settings',
+};
+
+function isKnownPathname(pathname: string): boolean {
+  const normalized = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+  return Boolean(KNOWN_PATHS[normalized]);
+}
 
 function ExamoraApplication() {
   const { profile, loading: authLoading, getValidIdToken } = useAuth();
+  const { showErrorToast } = useToast();
+
+  const [isNotFoundRoute, setIsNotFoundRoute] = useState<boolean>(() =>
+    !isKnownPathname(window.location.pathname)
+  );
+
   const [unauthScreen, setUnauthScreen] = useState<'login' | 'landing'>(() =>
-    window.location.pathname === '/overview' ? 'landing' : 'login'
+    window.location.pathname === '/login' ? 'login' : 'landing'
   );
-  const [currentView, setCurrentView] = useState<AppView>(() =>
-    window.location.pathname === '/privacy-policy' ? 'privacy-policy' : 'dashboard'
-  );
+  const [currentView, setCurrentView] = useState<AppView>(() => {
+    const path = window.location.pathname;
+    if (path === '/privacy-policy') return 'privacy-policy';
+    const mapped = KNOWN_PATHS[path];
+    if (mapped && mapped !== 'landing' && mapped !== 'login') {
+      return mapped;
+    }
+    return 'dashboard';
+  });
 
   const [dashboardData, setDashboardData] = useState<DashboardPayload | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState<boolean>(false);
@@ -66,6 +103,7 @@ function ExamoraApplication() {
     questions: ExamQuestion[];
     savedAnswers: any[];
   } | null>(null);
+  const [startingExam, setStartingExam] = useState<boolean>(false);
 
   // Active evaluation report state
   const [activeReport, setActiveReport] = useState<{
@@ -75,14 +113,28 @@ function ExamoraApplication() {
     answers: any[];
   } | null>(null);
   const [reportLoading, setReportLoading] = useState<boolean>(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [lastAttemptId, setLastAttemptId] = useState<string | null>(null);
 
-  // Sync URL pathname (/privacy-policy) with currentView
+  // Sync URL pathname (/privacy-policy, /login, /, or unknown 404 routes) with screen state
   useEffect(() => {
     const handlePopState = () => {
-      if (window.location.pathname === '/privacy-policy') {
+      const path = window.location.pathname;
+      if (!isKnownPathname(path)) {
+        setIsNotFoundRoute(true);
+        return;
+      }
+      setIsNotFoundRoute(false);
+
+      if (path === '/privacy-policy') {
         setCurrentView('privacy-policy');
-      } else if (currentView === 'privacy-policy') {
-        setCurrentView('dashboard');
+      } else if (path === '/login') {
+        setUnauthScreen('login');
+      } else {
+        setUnauthScreen('landing');
+        if (currentView === 'privacy-policy') {
+          setCurrentView('dashboard');
+        }
       }
     };
     window.addEventListener('popstate', handlePopState);
@@ -97,8 +149,9 @@ function ExamoraApplication() {
       const token = await getValidIdToken();
       const payload = await fetchDashboardData(token);
       setDashboardData(payload);
-    } catch (err: any) {
-      setDashboardError(err.message || 'Failed to load student dashboard.');
+    } catch (err: unknown) {
+      const friendly = mapErrorToUserMessage(err, 'dashboard');
+      setDashboardError(friendly.message);
     } finally {
       setDashboardLoading(false);
     }
@@ -110,21 +163,48 @@ function ExamoraApplication() {
     }
   }, [profile, loadDashboard]);
 
+  // 1. Session Restoration / Initial Application Loader
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 text-sm font-medium">
-        Initializing EXAMORA Academic Environment...
-      </div>
+      <GlobalLoader
+        message="Restoring your EXAMORA academic session..."
+        submessage="Verifying credentials and workspace preferences"
+      />
     );
   }
 
-  // Dedicated /privacy-policy route (accessible whether logged out or logged in)
+  // 2. Custom 404 Page Not Found for unknown URLs
+  if (isNotFoundRoute) {
+    return (
+      <NotFoundPage
+        isAuthenticated={Boolean(profile)}
+        onBackToDashboard={() => {
+          window.history.pushState({}, '', '/');
+          setIsNotFoundRoute(false);
+          if (profile) {
+            setCurrentView('dashboard');
+          } else {
+            setUnauthScreen('login');
+          }
+        }}
+        onGoHome={() => {
+          window.history.pushState({}, '', '/');
+          setIsNotFoundRoute(false);
+          setUnauthScreen('landing');
+          setCurrentView('dashboard');
+        }}
+      />
+    );
+  }
+
+  // 3. Dedicated /privacy-policy route (accessible whether logged out or logged in)
   if (currentView === 'privacy-policy') {
     return (
       <PrivacyPolicyPage
         isAuthenticated={Boolean(profile)}
         onBack={() => {
-          window.history.pushState({}, '', '/');
+          const targetPath = !profile && unauthScreen === 'login' ? '/login' : '/';
+          window.history.pushState({}, '', targetPath);
           setCurrentView('dashboard');
         }}
         onOpenSettings={() => {
@@ -135,7 +215,7 @@ function ExamoraApplication() {
     );
   }
 
-  // Show Dedicated Login Page or Overview Landing Page when not signed in
+  // 4. Show Overview Landing Page or Dedicated Login Page when not signed in
   if (!profile) {
     if (unauthScreen === 'landing') {
       return (
@@ -155,13 +235,23 @@ function ExamoraApplication() {
     return (
       <LoginPage
         onBackToOverview={() => {
-          window.history.pushState({}, '', '/overview');
+          window.history.pushState({}, '', '/');
           setUnauthScreen('landing');
         }}
         onOpenPrivacyPolicy={() => {
           window.history.pushState({}, '', '/privacy-policy');
           setCurrentView('privacy-policy');
         }}
+      />
+    );
+  }
+
+  // 5. Full-screen loader when preparing/launching a live timed examination room
+  if (startingExam) {
+    return (
+      <GlobalLoader
+        message="Preparing Examination Room..."
+        submessage="Loading calibrated questions, marking rubrics, and timer state"
       />
     );
   }
@@ -212,10 +302,18 @@ function ExamoraApplication() {
   };
 
   const handleStartExam = async (examId: string) => {
-    const token = await getValidIdToken();
-    const session = await startExamSession(token, examId);
-    setActiveSession(session);
-    setCurrentView('exam-player');
+    setStartingExam(true);
+    try {
+      const token = await getValidIdToken();
+      const session = await startExamSession(token, examId);
+      setActiveSession(session);
+      setCurrentView('exam-player');
+    } catch (err: unknown) {
+      const friendly = mapErrorToUserMessage(err, 'exam_start');
+      showErrorToast(friendly.message, friendly.title);
+    } finally {
+      setStartingExam(false);
+    }
   };
 
   const handleAutoSaveAttempt = async (payload: {
@@ -252,12 +350,18 @@ function ExamoraApplication() {
   };
 
   const handleViewResult = async (attemptId: string) => {
+    setLastAttemptId(attemptId);
     setReportLoading(true);
+    setReportError(null);
     setCurrentView('exam-result');
     try {
       const token = await getValidIdToken();
       const rep = await fetchResultReport(token, attemptId);
       setActiveReport(rep);
+    } catch (err: unknown) {
+      const friendly = mapErrorToUserMessage(err, 'result_load');
+      setReportError(friendly.message);
+      showErrorToast(friendly.message, friendly.title);
     } finally {
       setReportLoading(false);
     }
@@ -315,6 +419,7 @@ function ExamoraApplication() {
           data={dashboardData}
           loading={dashboardLoading}
           error={dashboardError}
+          onRetry={loadDashboard}
           onNavigate={setCurrentView}
           onStartExam={handleStartExam}
           onViewResult={handleViewResult}
@@ -345,6 +450,8 @@ function ExamoraApplication() {
         <ExamResultPage
           report={activeReport}
           loading={reportLoading}
+          error={reportError}
+          onRetry={lastAttemptId ? () => handleViewResult(lastAttemptId) : undefined}
           onBackToDashboard={() => setCurrentView('dashboard')}
           onRetakeExam={handleStartExam}
           onGenerateAdaptiveFromMistakes={(subj, weakTopics) =>
@@ -356,6 +463,9 @@ function ExamoraApplication() {
       {currentView === 'adaptive' && (
         <ExamArchivePage
           data={dashboardData}
+          loading={dashboardLoading}
+          error={dashboardError}
+          onRetry={loadDashboard}
           onNavigate={setCurrentView}
           onStartExam={handleStartExam}
           onViewResult={handleViewResult}
@@ -366,6 +476,9 @@ function ExamoraApplication() {
       {currentView === 'analytics' && (
         <AnalyticsPage
           data={dashboardData}
+          loading={dashboardLoading}
+          error={dashboardError}
+          onRetry={loadDashboard}
           onViewResult={handleViewResult}
           onTriggerAdaptiveExam={handleTriggerAdaptive}
         />
@@ -388,8 +501,12 @@ function ExamoraApplication() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <ExamoraApplication />
-    </AuthProvider>
+    <AppErrorBoundary>
+      <ErrorToastProvider>
+        <AuthProvider>
+          <ExamoraApplication />
+        </AuthProvider>
+      </ErrorToastProvider>
+    </AppErrorBoundary>
   );
 }

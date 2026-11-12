@@ -9,7 +9,8 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.0-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Cloud_SQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Drizzle ORM](https://img.shields.io/badge/Drizzle_ORM-0.45-C5F74F?style=flat-square&logo=drizzle&logoColor=black)](https://orm.drizzle.team/)
-[![Firebase & Password Auth](https://img.shields.io/badge/Auth-Email%20%7C%20Google%20%7C%20GitHub-FFCA28?style=flat-square&logo=firebase&logoColor=black)](https://firebase.google.com/)
+[![Vercel Ready](https://img.shields.io/badge/Vercel-SPA%20Rewrites-000000?style=flat-square&logo=vercel&logoColor=white)](https://vercel.com/)
+[![Auth](https://img.shields.io/badge/Auth-Email%20%7C%20Google%20%7C%20GitHub-FFCA28?style=flat-square&logo=firebase&logoColor=black)](https://firebase.google.com/)
 
 **EXAMORA** is a full-stack digital examination system and personal academic evaluator designed for university students and independent scholars. Instead of behaving like an ordinary conversational chatbot, EXAMORA operates as a rigorous examination studio: students upload course documents or specify syllabus topics, generate calibrated question papers across **5 assessment formats**, sit timed examinations with auto-saved state, and receive transparent, criterion-by-criterion rubric evaluations, longitudinal mastery analytics, and complete academic identity management.
 
@@ -23,25 +24,28 @@
 2. [Workspace Modules](#-workspace-modules)
 3. [Five Examination Modes](#-five-examination-modes)
 4. [System Architecture](#-system-architecture)
-5. [Database Schema (PostgreSQL + Drizzle ORM)](#-database-schema-postgresql--drizzle-orm)
-6. [REST API Reference](#-rest-api-reference)
-7. [Authentication & DPDP Act 2023 Compliance](#-authentication--dpdp-act-2023-compliance)
-8. [Keyboard Shortcuts](#-keyboard-shortcuts)
-9. [Local Setup & Installation](#-local-setup--installation)
-10. [Security & Engineering Principles](#-security--engineering-principles)
+5. [Enterprise Feedback & Resilience Subsystem](#-enterprise-feedback--resilience-subsystem)
+6. [Database Schema (PostgreSQL + Drizzle ORM)](#-database-schema-postgresql--drizzle-orm)
+7. [REST API Reference](#-rest-api-reference)
+8. [Authentication & DPDP Act 2023 Compliance](#-authentication--dpdp-act-2023-compliance)
+9. [Keyboard Shortcuts](#-keyboard-shortcuts)
+10. [Local Setup & Installation](#-local-setup--installation)
+11. [Deployment (Vercel & Node.js)](#-deployment-vercel--nodejs)
+12. [Security & Engineering Principles](#-security--engineering-principles)
 
 ---
 
 ## Core Capabilities
 
-- **Flexible Multi-Method Authentication**:
+- **Multi-Method Enterprise Authentication**:
   - Native Email & Password accounts with salted `scrypt` cryptographic hashing (`crypto.scryptSync` + `crypto.timingSafeEqual`).
-  - Single Sign-On via Google and GitHub OAuth providers.
-  - Zero-friction Interactive Scholar Mode for instant sandbox trials.
-  - Mandatory DPDP Act 2023 consent capture on account creation.
-- **Academic Identity & Personal Profile Management**:
-  - Full scholar personal profile management: custom avatar upload, age, date of birth, gender, institution, department, academic degree tier, target academic goal, preferred difficulty, and personal bio.
-  - Deterministic Google-style SVG avatar generation based on email/initials fallback.
+  - Google and GitHub OAuth providers with domain-safety checks (`isFirebaseAuthorizedHost`) to avoid popup blockers on custom deployments.
+  - Client-side credential vault (`examora_users_vault_v1`) and isolated per-user workspaces (`examora_workspace_{uid}_v1`).
+  - Single-click synchronous sign-out with instant state clearing preventing stale-session race conditions.
+  - Mandatory Digital Personal Data Protection (DPDP) Act 2023 consent capture on account creation.
+- **Academic Identity & Scholar Profile Studio**:
+  - Full personal profile management: optional custom avatar photo with canvas auto-crop, age, date of birth, gender, affiliated university/institution, department, degree tier, target academic goal, and scholar bio.
+  - Dynamic user initials fallback icons when no custom photo is uploaded.
 - **Document-Based & Topic-Based Paper Synthesis**:
   - Upload study materials (`PDF`, `DOCX`, `PPT`, `TXT`, `MD`) or paste syllabus notes. EXAMORA extracts structured chapters and granular testable subtopics so students can select exact chapters to be tested on.
   - Alternatively, enter any academic subject and select or add custom theorems, algorithms, and subtopics.
@@ -54,8 +58,13 @@
 - **Zero Fake Telemetry**:
   - Student accounts start with a clean academic ledger (`0` pre-seeded results). Score progression charts, grades, and weak-topic diagnostics are populated strictly after sitting and submitting real examinations.
 - **Dual-Storage Engine (PostgreSQL + In-Memory Fallback)**:
-  - Connects to PostgreSQL via `DATABASE_URL` or individual host/user credentials.
-  - Includes a zero-config in-memory fallback store (`memoryStore`) allowing immediate local evaluation and PaaS preview runs without external database provisioning.
+  - Connects to PostgreSQL via `DATABASE_URL` or discrete `SQL_HOST` parameters.
+  - Server-side in-memory fallback store (`memoryStore`) automatically buffers operations if the database is scaling up or temporarily unreachable.
+- **Comprehensive Error Handling & Loading System**:
+  - Global React `AppErrorBoundary` with sanitized user recovery options.
+  - Dedicated custom 404 (`NotFoundPage`) for unrecognized academic routes.
+  - Unified `ErrorSystem` with inline error banners, full-page errors, and floating toasts.
+  - Unified `LoadingSystem` featuring branded `GlobalLoader`, `PageSkeleton`, and button loaders.
 - **Light & Matte Carbon Dark Mode**:
   - High-contrast academic Light Theme and a true neutral Matte Carbon/Zinc Dark Theme (`#09090B` canvas, `#121215` cards, crisp neutral white active controls).
 
@@ -65,14 +74,15 @@
 
 | Module | Description |
 | :--- | :--- |
-| **1. Dedicated Auth Suite** | Clean authentication hub with interactive system architecture visualizer, Login/Register tabs, password visibility toggles, password reset workflow, and DPDP Act 2023 Consent checks. |
-| **2. Student Dashboard** | Executive KPI strip (Total Exams Taken, Average Score, Best Score, Study Materials Indexed), Score Progression area chart, Subject-Wise Performance bar chart, Weak Topics requiring revision, and Recent Examination History. |
-| **3. Create Examination** | Dual-mode studio (**Topic-Based** vs. **Document-Based**) with interactive syllabus concept tags, difficulty selector, format selector, duration/question sliders, and negative marking configuration. |
-| **4. Study Materials** | Document upload & curriculum extraction engine. Extracts chapter trees and subtopics from uploaded files or quick academic templates and launches targeted papers from selected subtopics. |
-| **5. Question Bank & Archive** | Dedicated 3-tab repository: **Configured Papers** (searchable/filterable by format & difficulty with resume/start controls), **Graded Answer Scripts** (official transcripts & rubric reports), and **Syllabus Topic Bank** (1-click module drills). |
-| **6. Performance Analytics** | Longitudinal topic-wise accuracy distribution chart, subject filter segmented control, Concept Mastery Matrix (`Needs Focus`, `Developing`, `Proficient`, `Mastered`), targeted weakness drills, and time management logs. |
-| **7. Personal Information** | Comprehensive academic profile editor with avatar photo upload, age, DOB, gender, affiliated university/institution, department, degree level, target mastery goal, and scholar bio. |
-| **8. Privacy & Settings (DPDP 2023)** | DPDP Act 2023 compliance panel: consent logs, complete personal data archive export (JSON), and permanent right-to-be-forgotten account erasure. |
+| **1. Dedicated Auth Hub (`/login`)** | Complete authentication suite featuring an interactive 3x3 platform architecture diagram, Login/Register tabs, password visibility controls, OAuth verification modals, and DPDP Act 2023 consent capture. |
+| **2. Student Dashboard (`/dashboard`)** | Executive KPI strip (Total Exams Taken, Average Score, Best Score, Study Materials Indexed), Score Progression area chart, Subject-Wise Performance bar chart, Weak Topics requiring revision, and Recent Examination History. |
+| **3. Create Examination (`/create-exam`)** | Dual-mode studio (**Topic-Based** vs. **Document-Based**) with interactive syllabus concept tags, difficulty selector, format selector, duration/question sliders, and negative marking configuration. |
+| **4. Study Materials (`/documents`)** | Document upload & curriculum extraction engine. Extracts chapter trees and subtopics from uploaded files or quick academic templates and launches targeted papers from selected subtopics. |
+| **5. Question Bank & Archive (`/adaptive`)** | Dedicated 3-tab repository: **Configured Papers** (searchable/filterable by format & difficulty with resume/start controls), **Graded Answer Scripts** (official transcripts & rubric reports), and **Syllabus Topic Bank** (1-click module drills). |
+| **6. Performance Analytics (`/analytics`)** | Longitudinal topic-wise accuracy distribution chart, subject filter segmented control, Concept Mastery Matrix (`Needs Focus`, `Developing`, `Proficient`, `Mastered`), targeted weakness drills, and time management logs. |
+| **7. Personal Information (`/profile`)** | Scholar identity studio: optional photo upload with client-side canvas square crop, age, DOB, gender, affiliated university/institution, department, degree level, target mastery goal, and scholar bio. |
+| **8. Privacy & Settings (`/settings`)** | DPDP Act 2023 compliance panel: consent logs, complete personal data archive export (JSON), and permanent right-to-be-forgotten account erasure. |
+| **9. Custom 404 (`NotFoundPage`)** | Branded page recovery with direct return controls to the Student Dashboard or Public Overview when navigating to unknown URLs. |
 
 ---
 
@@ -107,27 +117,32 @@
 
 ```text
 ├── server.ts                         # Express backend + Vite middleware server (Port 3000 / dynamic $PORT)
-├── public/                           # Static public web assets
+├── vercel.json                       # Vercel SPA routing rewrites configuration
+├── public/                           # Static public web assets & platform graphics
 ├── src/
-│   ├── App.tsx                       # Root application state & unauthenticated/authenticated view router
+│   ├── App.tsx                       # Root application state, route validation & AppErrorBoundary
 │   ├── index.css                     # Typography & Matte Carbon dark mode design tokens
 │   ├── components/
-│   │   ├── layout/AppShell.tsx       # Sidebar, top bar, personal profile CTA & Cmd/Ctrl+F Reading Mode
-│   │   └── ui/                       # Reusable Button & Card primitives
-│   ├── context/AuthContext.tsx       # Password, Google, GitHub & Scholar session state
+│   │   ├── feedback/
+│   │   │   ├── AppErrorBoundary.tsx  # Global error boundary preventing React crash screens
+│   │   │   ├── ErrorSystem.tsx       # Inline ErrorMessage, FullPageError, and ErrorToastProvider
+│   │   │   └── LoadingSystem.tsx     # GlobalLoader, PageSkeleton, and ButtonLoader
+│   │   ├── layout/AppShell.tsx       # Sidebar, top bar, profile card & Cmd/Ctrl+F Reading Mode
+│   │   └── ui/                       # Reusable Button and Card primitives
+│   ├── context/AuthContext.tsx       # Password, Google, GitHub, Vault storage & session engine
 │   ├── db/
 │   │   ├── drizzle.config.ts         # Drizzle Kit PostgreSQL migration configuration
-│   │   ├── index.ts                  # PostgreSQL connection pool with DATABASE_URL & SQL_HOST support
+│   │   ├── index.ts                  # PostgreSQL connection pool with idle error isolation
 │   │   ├── schema.ts                 # 10 relational PostgreSQL tables & indexes
-│   │   └── repository.ts             # Scrypt auth, database queries, and in-memory fallback store
+│   │   └── repository.ts             # Scrypt auth, database queries & resilient in-memory fallback
 │   ├── lib/
-│   │   ├── firebase.ts               # Client-side Firebase SDK initialization
+│   │   ├── firebase.ts               # Firebase SDK setup, provider scopes & host authorization
 │   │   └── firebase-admin.ts         # Server-side Firebase Admin token verifier
 │   ├── middleware/
 │   │   ├── auth.ts                   # Bearer token & Scholar session authentication middleware
 │   │   └── rateLimit.ts              # Per-user API rate limiter
 │   ├── pages/
-│   │   ├── LoginPage.tsx             # Interactive authentication suite with system topology diagram
+│   │   ├── LoginPage.tsx             # Interactive authentication suite with 3x3 system topology
 │   │   ├── LandingPage.tsx           # Public academic overview & features showcase
 │   │   ├── DashboardPage.tsx         # Student KPI overview & progression charts
 │   │   ├── CreateExamPage.tsx        # Examination configuration studio
@@ -135,20 +150,39 @@
 │   │   ├── ExamArchivePage.tsx       # Question Bank, Transcripts & Syllabus Vault
 │   │   ├── ExamPlayerPage.tsx        # Live timed examination interface
 │   │   ├── ExamResultPage.tsx        # Post-submission rubric report & answer key
-│   │   ├── PersonalProfilePage.tsx   # Scholar identity, photo upload, and academic metadata
+│   │   ├── PersonalProfilePage.tsx   # Scholar identity, optional photo upload & academic metadata
 │   │   ├── AnalyticsPage.tsx         # Topic mastery matrix & time management telemetry
 │   │   ├── SettingsPrivacyPage.tsx   # DPDP 2023 Consent audit, data export & account deletion
-│   │   └── PrivacyPolicyPage.tsx     # Formal privacy policy & grievance redressal details
+│   │   ├── PrivacyPolicyPage.tsx     # Formal privacy policy & grievance redressal details
+│   │   └── NotFoundPage.tsx          # Custom 404 syllabus-themed page not found screen
 │   ├── utils/
-│   │   ├── avatar.ts                 # Deterministic Google-style initials SVG avatar generator
+│   │   ├── errorHandler.ts           # Technical-to-user error sanitizer (never leaks queries or stacks)
 │   │   └── cn.ts                     # Tailwind class merge utility
 │   └── services/
-│       ├── api.ts                    # Frontend REST API client with offline resilience
+│       ├── api.ts                    # REST client with per-user isolated workspace fallback
 │       └── ai/
 │           ├── base.ts               # Provider-independent AI Teacher contract
 │           ├── gemini.ts             # Gemini structured JSON & multimodal vision engine
 │           └── factory.ts            # Pluggable AI provider factory
 ```
+
+---
+
+## Enterprise Feedback & Resilience Subsystem
+
+EXAMORA features a dedicated frontend feedback system (`src/components/feedback/` and `src/utils/errorHandler.ts`):
+
+1. **`AppErrorBoundary`**:
+   - Catches unhandled runtime exceptions in React component trees.
+   - Suppresses cryptic stack traces from end-users and presents a polite recovery screen with direct **Return to Dashboard** and **Reload** actions.
+2. **`LoadingSystem`**:
+   - `GlobalLoader`: Smooth rotating dual-ring spinner with the EXAMORA brand seal.
+   - `PageSkeleton`: Shimmer pulse placeholders matching exact page layouts (`dashboard`, `form`, `table`).
+   - `ButtonLoader`: Accessible inline spinner for submitting forms and synthesizing papers.
+3. **`ErrorSystem` & `errorHandler`**:
+   - `ErrorMessage`: Inline dismissible alert with optional "Try Again" action for localized form failures.
+   - `FullPageError`: Dedicated view with network status detection and reconnection controls.
+   - `mapErrorToUserMessage()`: Translates raw HTTP codes, SQL errors, and Firebase exceptions into natural, understandable English while logging sanitized technical details for debugging.
 
 ---
 
@@ -200,7 +234,7 @@ All `/api/*` routes are protected by Bearer token / Scholar session verification
 ## Authentication & DPDP Act 2023 Compliance
 
 1. **Scrypt Password Security**: Passwords are never stored in plaintext. They are salted with a 16-byte cryptographically secure random salt and hashed using Node.js `crypto.scryptSync`. Comparisons use timing-safe `crypto.timingSafeEqual` to prevent timing side-channel attacks.
-2. **Explicit Consent Architecture**: During registration, users must accept the Digital Personal Data Protection (DPDP) Act 2023 terms. Every consent agreement is audited with versioning and timestamps.
+2. **Explicit Consent Architecture**: During registration, users must accept the Digital Personal Data Protection (DPDP) Act 2023 terms. Every consent agreement is audited with versioning, IP, and timestamps.
 3. **Right to Access & Data Portability**: Under `/api/account/export-data`, users can download their complete academic record, answers, documents, and logs as a structured JSON bundle.
 4. **Right to Erasure (Forgotten)**: Under `/api/account/delete-all`, users can permanently purge their account, documents, uploaded scans, and test history from the system.
 
@@ -280,16 +314,39 @@ npm run dev
 
 Open `http://localhost:3000` in your browser.
 
-### 5. Typecheck & Build for Production
+---
+
+## Deployment (Vercel & Node.js)
+
+### Deploying to Vercel
+The repository includes `vercel.json` with SPA routing rewrites:
+```json
+{
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
+```
+1. Push your repository to GitHub.
+2. Import the project into the [Vercel Dashboard](https://vercel.com/new).
+3. Set the Framework Preset to **Vite**.
+4. Configure environment variables (`GEMINI_API_KEY`, etc.) in the Vercel project settings.
+5. Click **Deploy**.
+
+### Production Node.js Server
+To build and run the full-stack server on Docker, Cloud Run, Render, or Railway:
 
 ```bash
-# Run TypeScript compiler validation
+# 1. Validate TypeScript compiler
 npm run lint
 
-# Build production frontend bundle
+# 2. Build production frontend assets
 npm run build
 
-# Start production Express + static server
+# 3. Start production Express + static server
 npm start
 ```
 
@@ -299,9 +356,10 @@ npm start
 
 1. **Server-Side AI Isolation**: All `@google/genai` calls execute strictly on the Express backend (`src/services/ai/gemini.ts`). API keys are never exposed to client code.
 2. **Sealed Answer Keys**: During an active examination (`/api/exams/:examId/start`), `correctAnswer` and `explanation` fields are stripped on the server before questions are returned to the browser.
-3. **Provider-Independent AI Contract**: `IAITeacherProvider` (`src/services/ai/base.ts`) decouples examination synthesis and rubric evaluation from any single vendor so OpenAI, Claude, or local models can be plugged in via `src/services/ai/factory.ts`.
-4. **Sandboxed Code Verification**: Student code submissions are never executed via `eval` or `child_process` on the host server.
-5. **Robust AI & Storage Fallbacks**: Graceful degradation handles missing database credentials and rate-limited API calls cleanly without crashing the user's session.
+3. **Hardened Content Security Policy**: CSP headers enforce strict origins for scripts, frames, and connections while allowing Google and GitHub OAuth authentication flows.
+4. **Provider-Independent AI Contract**: `IAITeacherProvider` (`src/services/ai/base.ts`) decouples examination synthesis and rubric evaluation from any single vendor so OpenAI, Claude, or local models can be plugged in via `src/services/ai/factory.ts`.
+5. **Sandboxed Code Verification**: Student code submissions are never executed via `eval` or `child_process` on the host server.
+6. **Graceful Storage & Network Resilience**: Layered failover ensures that temporary database drops or network interruptions smoothly fall back to user-isolated storage without breaking active tests.
 
 ---
 

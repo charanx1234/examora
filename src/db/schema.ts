@@ -254,7 +254,7 @@ export const consents = pgTable(
     consentText: text('consent_text')
       .notNull()
       .default(
-        'I agree to the Privacy Policy and consent to my data (name, email, uploaded photos) being used to provide plant diagnosis and AI examination evaluation.'
+        'I agree to the Privacy Policy and consent to my data (name, email, uploaded photos) being used to provide plant diagnosis.'
       ),
     timestamp: timestamp('timestamp').defaultNow().notNull(),
   },

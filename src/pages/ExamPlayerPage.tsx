@@ -19,6 +19,9 @@ import {
 } from '../types/examora.ts';
 import { Button } from '../components/ui/Button.tsx';
 import { Card, CardContent, CardHeader } from '../components/ui/Card.tsx';
+import { ButtonLoader, PageSkeleton } from '../components/feedback/LoadingSystem.tsx';
+import { ErrorMessage, FullPageError } from '../components/feedback/ErrorSystem.tsx';
+import { mapErrorToUserMessage } from '../utils/errorHandler.ts';
 
 interface ExamPlayerPageProps {
   exam: ExamConfig;
@@ -102,6 +105,7 @@ export function ExamPlayerPage({
   const [saveState, setSaveState] = useState<'saved' | 'saving'>('saved');
   const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [codeTestOutput, setCodeTestOutput] = useState<string | null>(null);
   const [ephemeralPhotoMode, setEphemeralPhotoMode] = useState<boolean>(false);
 
@@ -296,6 +300,7 @@ export function ExamPlayerPage({
   const handleFinalSubmit = async () => {
     if (submitting) return;
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const totalSeconds = exam.durationMinutes * 60;
       const timeTakenSeconds = Math.max(10, totalSeconds - timeLeft);
@@ -305,12 +310,30 @@ export function ExamPlayerPage({
         codeLanguage: answersMap[q.id]?.codeLanguage || null,
         handwrittenImageData: answersMap[q.id]?.handwrittenImageData || null,
       }));
-      sessionStorage.removeItem(`examora_attempt_${attempt.id}`);
       await onSubmitExam({ answersPayload, timeTakenSeconds, ephemeralPhotoMode });
+      sessionStorage.removeItem(`examora_attempt_${attempt.id}`);
+    } catch (err: unknown) {
+      const friendly = mapErrorToUserMessage(err, 'exam_submit');
+      setSubmitError(friendly.message);
+      setConfirmSubmitOpen(true);
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (!questions || questions.length === 0 || !currentQuestion) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 p-6 flex items-center justify-center">
+        <div className="max-w-xl w-full">
+          <FullPageError
+            title="Examination Questions Unavailable"
+            message="We couldn't load the questions for this examination session. Your attempt progress is safe."
+            onBackToDashboard={onExitWithoutSubmitting}
+          />
+        </div>
+      </div>
+    );
+  }
 
   const answeredCount = questions.filter((q) => {
     const a = answersMap[q.id];
@@ -757,12 +780,25 @@ export function ExamPlayerPage({
                 </div>
               </div>
 
+              {submitError && (
+                <ErrorMessage
+                  title="Submission Incomplete"
+                  message={submitError}
+                  onRetry={handleFinalSubmit}
+                  retryLabel="Retry Submission"
+                  retrying={submitting}
+                />
+              )}
+
               <div className="flex items-center justify-end gap-3 pt-2">
                 <Button
                   type="button"
                   variant="outline"
                   disabled={submitting}
-                  onClick={() => setConfirmSubmitOpen(false)}
+                  onClick={() => {
+                    setSubmitError(null);
+                    setConfirmSubmitOpen(false);
+                  }}
                 >
                   Return to Paper
                 </Button>
@@ -772,10 +808,7 @@ export function ExamPlayerPage({
                   onClick={handleFinalSubmit}
                 >
                   {submitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Evaluating Answers...</span>
-                    </>
+                    <ButtonLoader label="Evaluating Answers..." size="sm" />
                   ) : (
                     <span>Confirm & Evaluate</span>
                   )}

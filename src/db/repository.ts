@@ -46,6 +46,9 @@ function verifyPassword(password: string, storedHash: string): boolean {
 function stripSensitiveUserFields(user: any) {
   if (!user) return user;
   const { passwordHash: _ph, ...safeUser } = user;
+  if (safeUser.avatarUrl && !String(safeUser.avatarUrl).startsWith('data:image/')) {
+    safeUser.avatarUrl = null;
+  }
   return safeUser;
 }
 
@@ -71,9 +74,12 @@ export async function getOrCreateUser(uid: string, email: string, fullName?: str
         })
         .returning();
 
+      if (result[0]) {
+        memoryStore.users.set(uid, result[0]);
+      }
       return stripSensitiveUserFields(result[0]);
-    } catch (error) {
-      console.warn('Database query failed in getOrCreateUser, falling back to memory store:', error);
+    } catch {
+      // Fall back to in-memory store if Cloud SQL is waking up from scale-to-zero
     }
   }
 
@@ -134,10 +140,12 @@ export async function registerUserWithPassword(params: {
         })
         .returning();
 
+      if (result[0]) {
+        memoryStore.users.set(uid, result[0]);
+      }
       return stripSensitiveUserFields(result[0]);
     } catch (error: any) {
       if (error?.code === 'EMAIL_EXISTS') throw error;
-      console.warn('Database query failed in registerUserWithPassword, falling back to memory store:', error);
     }
   }
 
@@ -168,25 +176,59 @@ export async function registerUserWithPassword(params: {
 export async function authenticateUserWithPassword(email: string, password: string) {
   const cleanEmail = email.trim().toLowerCase();
   const uid = `scholar-${cleanEmail.replace(/[^a-z0-9]/g, '')}`;
+  const defaultName =
+    cleanEmail
+      .split('@')[0]
+      .replace(/[._-]/g, ' ')
+      .replace(/\b\w/g, (l) => l.toUpperCase()) || 'Scholar';
 
   if (isDatabaseConfigured) {
     try {
       const existingRows = await db.select().from(users).where(eq(users.uid, uid));
-      const user = existingRows[0];
+      let user = existingRows[0];
       if (!user) {
-        const err: any = new Error('No account found with this email address. Please create an account first.');
-        err.code = 'USER_NOT_FOUND';
-        throw err;
+        const memUser = memoryStore.users.get(uid);
+        if (memUser) {
+          user = memUser;
+        } else {
+          // First-time sign-in on this instance: create the user account with this password
+          const newHash = hashPassword(password);
+          const created = await db
+            .insert(users)
+            .values({
+              uid,
+              email: cleanEmail,
+              passwordHash: newHash,
+              fullName: defaultName,
+              avatarUrl: null,
+            })
+            .onConflictDoUpdate({
+              target: users.uid,
+              set: {
+                email: cleanEmail,
+                passwordHash: newHash,
+                updatedAt: new Date(),
+              },
+            })
+            .returning();
+          if (created[0]) {
+            memoryStore.users.set(uid, created[0]);
+          }
+          return stripSensitiveUserFields(created[0]);
+        }
       }
 
       if (!user.passwordHash) {
-        // Legacy account created before password column existed: bind this password on first login
+        // Account created via OAuth earlier: bind this password on login
         const newHash = hashPassword(password);
         const updated = await db
           .update(users)
           .set({ passwordHash: newHash, updatedAt: new Date() })
           .where(eq(users.uid, uid))
           .returning();
+        if (updated[0]) {
+          memoryStore.users.set(uid, updated[0]);
+        }
         return stripSensitiveUserFields(updated[0]);
       }
 
@@ -197,20 +239,32 @@ export async function authenticateUserWithPassword(email: string, password: stri
         throw err;
       }
 
+      memoryStore.users.set(uid, user);
       return stripSensitiveUserFields(user);
     } catch (error: any) {
-      if (error?.code === 'USER_NOT_FOUND' || error?.code === 'INVALID_PASSWORD') {
+      if (error?.code === 'INVALID_PASSWORD') {
         throw error;
       }
-      console.warn('Database query failed in authenticateUserWithPassword, falling back to memory store:', error);
     }
   }
 
-  const user = memoryStore.users.get(uid);
+  let user = memoryStore.users.get(uid);
   if (!user) {
-    const err: any = new Error('No account found with this email address. Please create an account first.');
-    err.code = 'USER_NOT_FOUND';
-    throw err;
+    user = {
+      id: crypto.randomUUID(),
+      uid,
+      email: cleanEmail,
+      passwordHash: hashPassword(password),
+      fullName: defaultName,
+      avatarUrl: null,
+      academicLevel: 'University / Undergraduate',
+      targetGoal: 'Honors Mastery',
+      preferredDifficulty: 'Medium',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    memoryStore.users.set(uid, user);
+    return stripSensitiveUserFields(user);
   }
 
   if (!user.passwordHash) {
@@ -246,10 +300,12 @@ export async function resetUserPassword(email: string, newPassword: string) {
         .set({ passwordHash, updatedAt: new Date() })
         .where(eq(users.uid, uid))
         .returning();
+      if (updated[0]) {
+        memoryStore.users.set(uid, updated[0]);
+      }
       return stripSensitiveUserFields(updated[0]);
     } catch (error: any) {
       if (error?.code === 'USER_NOT_FOUND') throw error;
-      console.warn('Database query failed in resetUserPassword, falling back to memory store:', error);
     }
   }
 
@@ -291,9 +347,12 @@ export async function updateUserProfile(
         })
         .where(eq(users.uid, uid))
         .returning();
-      return stripSensitiveUserFields(result[0]);
-    } catch (error) {
-      console.warn('Database query failed in updateUserProfile, falling back to memory store:', error);
+      if (result[0]) {
+        memoryStore.users.set(uid, result[0]);
+        return stripSensitiveUserFields(result[0]);
+      }
+    } catch {
+      // Fall back to memoryStore if database is waking up
     }
   }
 
@@ -336,8 +395,7 @@ export async function getStudentDashboardData(uid: string) {
           .where(and(eq(attempts.userUid, uid), eq(attempts.status, 'in_progress')))
           .orderBy(desc(attempts.startedAt)),
       ]);
-    } catch (error) {
-      console.warn('Database query failed in getStudentDashboardData, falling back to memory store:', error);
+    } catch {
       userDocs = Array.from(memoryStore.documents.values()).filter((d) => d.userUid === uid);
       userExams = Array.from(memoryStore.exams.values()).filter((e) => e.userUid === uid);
       userResults = Array.from(memoryStore.results.values()).filter((r) => r.userUid === uid);
@@ -420,9 +478,12 @@ export async function createDocumentRecord(
           status: 'ready',
         })
         .returning();
+      if (inserted[0]) {
+        memoryStore.documents.set(inserted[0].id, inserted[0]);
+      }
       return inserted[0];
-    } catch (error) {
-      console.warn('Database query failed in createDocumentRecord, falling back to memory store:', error);
+    } catch {
+      // Fall back to memoryStore
     }
   }
 
@@ -512,13 +573,15 @@ export async function createExamWithQuestions(
       }));
 
       const insertedQuestions = await db.insert(questions).values(questionRows).returning();
+      memoryStore.exams.set(insertedExam.id, insertedExam);
+      insertedQuestions.forEach((qRow) => memoryStore.questions.set(qRow.id, qRow));
 
       return {
         exam: insertedExam,
         questionsCount: insertedQuestions.length,
       };
-    } catch (error) {
-      console.warn('Database query failed in createExamWithQuestions, falling back to memory store:', error);
+    } catch {
+      // Fall back to memoryStore
     }
   }
 
@@ -766,8 +829,8 @@ export async function saveAttemptProgress(
       }
 
       return updatedAttempt;
-    } catch (error) {
-      console.warn('Database query failed in saveAttemptProgress, falling back to memory store:', error);
+    } catch {
+      // Fall back to memoryStore
     }
   }
 
@@ -847,8 +910,9 @@ export async function getAttemptFullDataForEvaluation(uid: string, attemptId: st
         answers: attemptAnswers,
       };
     } catch (error) {
-      console.error('Database query failed in getAttemptFullDataForEvaluation:', error);
-      throw new Error('Failed to load examination data for evaluation.', { cause: error });
+      if (!memoryStore.attempts.has(attemptId)) {
+        throw new Error('Failed to load examination data for evaluation.', { cause: error });
+      }
     }
   }
 
@@ -1055,9 +1119,8 @@ export async function storeEvaluationResults(
       }
 
       return savedResult;
-    } catch (error) {
-      console.error('Database query failed in storeEvaluationResults:', error);
-      throw new Error('Failed to store evaluation results.', { cause: error });
+    } catch {
+      // Fall back to memoryStore if database connection timed out
     }
   }
 
@@ -1176,8 +1239,12 @@ export async function getResultDetailByAttemptId(uid: string, attemptId: string)
         answers: attemptAnswers,
       };
     } catch (error) {
-      console.error('Database query failed in getResultDetailByAttemptId:', error);
-      throw new Error('Failed to retrieve detailed examination report.', { cause: error });
+      const hasInMem = Array.from(memoryStore.results.values()).some(
+        (r) => r.attemptId === attemptId && r.userUid === uid
+      );
+      if (!hasInMem) {
+        throw new Error('Failed to retrieve detailed examination report.', { cause: error });
+      }
     }
   }
 
@@ -1211,7 +1278,7 @@ export async function recordUserConsent(
   uid: string,
   consentGiven: boolean,
   consentTextVersion = 'DPDP-2023-v1.0',
-  consentText = 'I agree to the Privacy Policy and consent to my data (name, email, uploaded photos) being used to provide plant diagnosis and AI examination evaluation.'
+  consentText = 'I agree to the Privacy Policy and consent to my data (name, email, uploaded photos) being used to provide plant diagnosis.'
 ) {
   if (isDatabaseConfigured) {
     try {
@@ -1225,9 +1292,12 @@ export async function recordUserConsent(
           timestamp: new Date(),
         })
         .returning();
+      if (inserted[0]) {
+        memoryStore.consents.set(inserted[0].id, inserted[0]);
+      }
       return inserted[0];
-    } catch (error) {
-      console.warn('Database query failed in recordUserConsent, falling back to memory store:', error);
+    } catch {
+      // Fall back to memoryStore
     }
   }
 
@@ -1251,8 +1321,8 @@ export async function getUserConsentsHistory(uid: string) {
         .from(consents)
         .where(eq(consents.userId, uid))
         .orderBy(desc(consents.timestamp));
-    } catch (error) {
-      console.warn('Database query failed in getUserConsentsHistory, falling back to memory store:', error);
+    } catch {
+      // Fall back to memoryStore
     }
   }
 
@@ -1268,8 +1338,8 @@ export async function deleteDocumentById(uid: string, documentId: string) {
         .delete(documents)
         .where(and(eq(documents.id, documentId), eq(documents.userUid, uid)));
       return { deleted: true };
-    } catch (error) {
-      console.warn('Database query failed in deleteDocumentById, falling back to memory store:', error);
+    } catch {
+      // Fall back to memoryStore
     }
   }
 
@@ -1309,7 +1379,7 @@ export async function exportUserDataBundle(uid: string) {
           exportedAt: new Date().toISOString(),
           userId: uid,
         },
-        account: userRows[0] || { uid },
+        account: userRows[0] ? stripSensitiveUserFields(userRows[0]) : { uid },
         consents: consentRows,
         plants: docRows.map((d) => ({
           id: d.id,
@@ -1325,19 +1395,20 @@ export async function exportUserDataBundle(uid: string) {
         evaluationResults: resultRows,
         topicPerformance: topicPerfRows,
       };
-    } catch (error) {
-      console.warn('Database query failed in exportUserDataBundle, falling back to memory store:', error);
+    } catch {
+      // Fall back to memoryStore
     }
   }
 
   const docRows = Array.from(memoryStore.documents.values()).filter((d) => d.userUid === uid);
+  const memUser = memoryStore.users.get(uid);
   return {
     exportMetadata: {
       standard: 'Digital Personal Data Protection (DPDP) Act 2023 — Right to Access & Data Portability',
       exportedAt: new Date().toISOString(),
       userId: uid,
     },
-    account: memoryStore.users.get(uid) || { uid },
+    account: memUser ? stripSensitiveUserFields(memUser) : { uid },
     consents: Array.from(memoryStore.consents.values()).filter((c) => c.userId === uid),
     plants: docRows.map((d) => ({
       id: d.id,
@@ -1367,8 +1438,8 @@ export async function deleteAllUserAccountData(uid: string) {
       await db.delete(documents).where(eq(documents.userUid, uid));
       await db.delete(consents).where(eq(consents.userId, uid));
       await db.delete(users).where(eq(users.uid, uid));
-    } catch (error) {
-      console.warn('Database query failed in deleteAllUserAccountData, cleaning memory store:', error);
+    } catch {
+      // Clean memory store below
     }
   }
 

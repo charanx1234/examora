@@ -16,8 +16,8 @@ import {
 } from 'lucide-react';
 import { AppView } from '../../types/examora.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
-import { generateEmailDefaultAvatar, getUserAvatarUrl } from '../../utils/avatar.ts';
 import { Button } from '../ui/Button.tsx';
+import { ButtonLoader } from '../feedback/LoadingSystem.tsx';
 
 interface AppShellProps {
   currentView: AppView;
@@ -26,7 +26,7 @@ interface AppShellProps {
 }
 
 export function AppShell({ currentView, onNavigate, children }: AppShellProps) {
-  const { profile, isDemoMode, signOut, theme, toggleTheme } = useAuth();
+  const { profile, isDemoMode, signOut, signingOut, theme, toggleTheme } = useAuth();
   const [isDistractionFree, setIsDistractionFree] = useState(false);
 
   useEffect(() => {
@@ -68,7 +68,7 @@ export function AppShell({ currentView, onNavigate, children }: AppShellProps) {
     'privacy-policy': 'Privacy Policy & Grievance Redressal',
   };
 
-  const avatarSrc = getUserAvatarUrl(profile);
+  const hasCustomAvatar = Boolean(profile?.avatarUrl && profile.avatarUrl.trim().length > 0);
 
   return (
     <div className="min-h-screen flex bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
@@ -127,22 +127,21 @@ export function AppShell({ currentView, onNavigate, children }: AppShellProps) {
             <button
               type="button"
               onClick={() => onNavigate('profile')}
-              title="Click to view and edit your Personal Information & Profile Photo"
-              className={`w-full flex items-center gap-3 p-2 rounded-xl border transition-colors text-left cursor-pointer ${
+              title="Click to view and edit your Personal Information"
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors text-left cursor-pointer ${
                 currentView === 'profile'
                   ? 'border-slate-900 bg-slate-100 dark:border-slate-400 dark:bg-slate-800'
-                  : 'border-transparent hover:border-slate-200 hover:bg-slate-50 dark:hover:border-slate-800 dark:hover:bg-slate-800/60'
+                  : 'border-slate-200/70 dark:border-slate-800 hover:border-slate-300 hover:bg-slate-50 dark:hover:border-slate-700 dark:hover:bg-slate-800/60'
               }`}
             >
-              <img
-                src={avatarSrc}
-                alt={profile?.fullName || 'Scholar'}
-                referrerPolicy="no-referrer"
-                onError={(e) => {
-                  e.currentTarget.src = generateEmailDefaultAvatar(profile?.email, profile?.fullName);
-                }}
-                className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"
-              />
+              {hasCustomAvatar && (
+                <img
+                  src={profile!.avatarUrl!}
+                  alt={profile?.fullName || 'Scholar'}
+                  referrerPolicy="no-referrer"
+                  className="w-8 h-8 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                />
+              )}
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-semibold text-slate-900 dark:text-white truncate">
                   {profile?.fullName || 'Scholar'}
@@ -156,10 +155,17 @@ export function AppShell({ currentView, onNavigate, children }: AppShellProps) {
             <button
               type="button"
               onClick={signOut}
-              className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              disabled={signingOut}
+              className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 disabled:opacity-60 transition-colors cursor-pointer"
             >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sign Out</span>
+              {signingOut ? (
+                <ButtonLoader label="Signing out..." size="sm" />
+              ) : (
+                <>
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sign Out</span>
+                </>
+              )}
             </button>
           </div>
         </aside>
@@ -181,7 +187,7 @@ export function AppShell({ currentView, onNavigate, children }: AppShellProps) {
               </span>
             </div>
 
-            {/* Mobile quick nav + Distraction-Free Toggle + Clickable Username/Profile + Primary CTA */}
+            {/* Mobile quick nav + Distraction-Free Toggle + Clickable Username + Primary CTA */}
             <div className="flex items-center gap-2.5 shrink-0">
               <div className="flex lg:hidden items-center gap-1">
                 {navItems.map((item) => {
@@ -224,23 +230,39 @@ export function AppShell({ currentView, onNavigate, children }: AppShellProps) {
                 <kbd className="text-[10px] font-mono text-slate-400">⌘F</kbd>
               </button>
 
-              {/* Clickable Username & Avatar Button in Top Bar -> Opens Personal Information */}
+              {/* Clickable Username Button in Top Bar -> Opens Personal Information */}
               <button
                 type="button"
                 onClick={() => onNavigate('profile')}
-                title="View and edit your Personal Information & Profile Photo"
-                className="inline-flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-lg border border-slate-200 dark:border-slate-800 bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800 text-xs font-medium text-slate-800 dark:text-slate-200 transition-colors cursor-pointer"
+                title="View and edit your Personal Information"
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-200 transition-colors cursor-pointer"
               >
-                <img
-                  src={avatarSrc}
-                  alt={profile?.fullName || 'Scholar'}
-                  referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    e.currentTarget.src = generateEmailDefaultAvatar(profile?.email, profile?.fullName);
-                  }}
-                  className="w-6 h-6 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"
-                />
-                <span className="max-w-[120px] truncate">{profile?.fullName || 'Scholar'}</span>
+                {hasCustomAvatar && (
+                  <img
+                    src={profile!.avatarUrl!}
+                    alt={profile?.fullName || 'Scholar'}
+                    referrerPolicy="no-referrer"
+                    className="w-5 h-5 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                  />
+                )}
+                <span className="max-w-[140px] truncate">{profile?.fullName || 'Scholar'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={signOut}
+                disabled={signingOut}
+                title="Sign Out"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800 text-xs font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white disabled:opacity-60 transition-colors cursor-pointer"
+              >
+                {signingOut ? (
+                  <ButtonLoader label="Signing out..." size="sm" />
+                ) : (
+                  <>
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Sign Out</span>
+                  </>
+                )}
               </button>
 
               <Button

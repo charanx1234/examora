@@ -11,6 +11,9 @@ import {
 import { ExamConfig, StudyDocument } from '../types/examora.ts';
 import { Button } from '../components/ui/Button.tsx';
 import { Card, CardContent, CardHeader } from '../components/ui/Card.tsx';
+import { ButtonLoader } from '../components/feedback/LoadingSystem.tsx';
+import { ErrorMessage } from '../components/feedback/ErrorSystem.tsx';
+import { mapErrorToUserMessage } from '../utils/errorHandler.ts';
 
 interface CreateExamPageProps {
   documents: StudyDocument[];
@@ -171,8 +174,9 @@ export function CreateExamPage({
       });
 
       setGeneratedExam(res.exam);
-    } catch (err: any) {
-      setError(err.message || 'Failed to generate AI question paper.');
+    } catch (err: unknown) {
+      const mapped = mapErrorToUserMessage(err, 'exam_generate');
+      setError(mapped.message);
     } finally {
       setGenerating(false);
     }
@@ -567,15 +571,16 @@ export function CreateExamPage({
               </div>
 
               {error && (
-                <p className="text-xs text-red-600 dark:text-red-400 font-medium">{error}</p>
+                <ErrorMessage
+                  title="Examination Generation Notice"
+                  message={error}
+                  onDismiss={() => setError(null)}
+                />
               )}
 
               <Button type="submit" disabled={generating} size="lg" className="w-full">
                 {generating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Synthesizing Questions & Rubrics...</span>
-                  </>
+                  <ButtonLoader label="Synthesizing Questions & Rubrics..." size="sm" />
                 ) : (
                   <>
                     <FilePlus2 className="w-4 h-4" />
